@@ -13,4 +13,4 @@ REM
 
 @call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64 10.0.20348.0
 
-@call C:\msys64\msys2_shell.cmd -use-full-path -c "cd C:/mrv2-main && ./runme.sh -gpl -D MRV2_PYFLTK=OFF -D FLTK_BUILD_SHARED=OFF -D MRV2_PYBIND11=OFF; exec bash"
+@call C:\msys64\msys2_shell.cmd -use-full-path -c "cd C:\mrv2-main; exec bash"
