@@ -29,6 +29,7 @@ namespace py = pybind11;
 #include "mrvCore/mrvSignalHandler.h"
 
 #include "mrvFl/mrvContextObject.h"
+#include "mrvFl/mrvInit.h"
 #include "mrvFl/mrvLanguages.h"
 #include "mrvFl/mrvPreferences.h"
 #include "mrvFl/mrvSession.h"
@@ -92,14 +93,23 @@ namespace py = pybind11;
 
 #include "mrvFl/mrvIO.h"
 
+#if defined(TLRENDER_NDI) || defined(TLRENDER_BMD)
+#    include <tlDevice/DevicesModel.h>
+#endif
+
+#ifdef TLRENDER_BMD
+#    include <tlDevice/BMD/BMDOutputDevice.h>
+#endif
+
 #ifdef TLRENDER_NDI
-#    include <Processing.NDI.Lib.h>
+#    include <tlDevice/NDI/NDIOutputDevice.h>
 #endif
 
 namespace
 {
-    const char* kModule = "app";
-}
+    const char* kModule = "main";
+    const double kTimeout = 0.005;
+} // namespace
 
 namespace mrv
 {
@@ -127,9 +137,6 @@ namespace mrv
 
     struct Options
     {
-#ifdef DEBUG
-        int debug = 0;
-#endif
         std::string dummy;
         bool createOtioTimeline = false;
         std::vector<std::string> fileNames;
@@ -195,6 +202,11 @@ namespace mrv
         std::vector<std::shared_ptr<FilesModelItem> > activeFiles;
         std::vector<std::shared_ptr<timeline::Timeline> > timelines;
 
+        bool deviceActive = false;
+        std::shared_ptr<device::IOutput> outputDevice;
+        std::shared_ptr<device::DevicesModel> devicesModel;
+        image::VideoLevels outputVideoLevels = image::VideoLevels::First;
+
         // Observers
         std::shared_ptr<
             observer::ListObserver<std::shared_ptr<FilesModelItem> > >
@@ -205,6 +217,8 @@ namespace mrv
         std::shared_ptr<observer::ListObserver<int> > layersObserver;
         std::shared_ptr<observer::ValueObserver<timeline::CompareTimeMode> >
             compareTimeObserver;
+        std::shared_ptr<observer::ValueObserver<float> > volumeObserver;
+        std::shared_ptr<observer::ValueObserver<bool> > muteObserver;
         std::shared_ptr<observer::ValueObserver<timeline::PlayerCacheInfo> >
             cacheInfoObserver;
         std::shared_ptr<observer::ListObserver<log::Item> > logObserver;
@@ -235,17 +249,19 @@ namespace mrv
 
     namespace
     {
-        inline void open_console()
+        void open_console()
         {
 #ifdef _WIN32
+            // If TERM is defined, user fired the application from
+            // the Msys console that does not show these problems.x
             const char* term = fl_getenv("TERM");
             if (!term || strlen(term) == 0)
             {
-                BOOL ok = AttachConsole(ATTACH_PARENT_PROCESS);
-                if (ok)
-                {
-                    freopen("conout$", "w", stdout);
-                    freopen("conout$", "w", stderr);
+                if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+                    // Redirect stdout and stderr to the parent console
+                    freopen("CONOUT$", "w", stdout);
+                    freopen("CONOUT$", "w", stderr);
+                    return;
                 }
             }
 #endif
@@ -260,9 +276,10 @@ namespace mrv
         _p(new Private)
     {
         TLRENDER_P();
-
+        
         // Establish MRV2_ROOT environment variable
         set_root_path(argc, argv);
+        mrv::init(context);
 
 #ifdef __linux__
 
@@ -282,190 +299,193 @@ namespace mrv
         App::app = this;
         ViewerUI::app = this;
 
+        DBG;
         open_console();
 
+        DBG;
         const std::string& msg = setLanguageLocale();
 
+        DBG;
         BaseApp::_init(
             app::convert(argc, argv), context, "mrv2",
             _("Play timelines, movies, and image sequences."),
             {app::CmdLineValueArg<std::string>::create(
                 p.options.dummy, "inputs",
-                _("Timelines, movies, image sequences, or folders."), true,
-                true)},
+                _("Timelines, movies, image sequences, USD assets or "
+                  "folders."),
+                true, true)},
             {
-#ifndef NDEBUG
+#if 1 //ndef NDEBUG
                 app::CmdLineValueOption<int>::create(
                     Preferences::debug, {"-debug", "-d"},
                     _("Debug verbosity.")),
 #endif
-                    app::CmdLineValueOption<std::string>::create(
-                        p.options.audioFileName, {"-audio", "-a"},
-                        _("Audio file name.")),
-                    app::CmdLineValueOption<std::string>::create(
-                        p.options.compareFileName, {"-compare", "-b"},
-                        _("A/B comparison \"B\" file name.")),
-                    app::CmdLineValueOption<timeline::CompareMode>::create(
-                        p.options.compareOptions.mode, {"-compareMode", "-c"},
-                        _("A/B comparison mode."),
-                        string::Format("{0}").arg(
-                            p.options.compareOptions.mode),
-                        string::join(timeline::getCompareModeLabels(), ", ")),
-                    app::CmdLineValueOption<math::Vector2f>::create(
-                        p.options.compareOptions.wipeCenter,
-                        {"-wipeCenter", "-wc"},
-                        _("A/B comparison wipe center."),
-                        string::Format("{0}").arg(
-                            p.options.compareOptions.wipeCenter)),
-                    app::CmdLineValueOption<float>::create(
-                        p.options.compareOptions.wipeRotation,
-                        {"-wipeRotation", "-wr"},
-                        _("A/B comparison wipe rotation."),
-                        string::Format("{0}").arg(
-                            p.options.compareOptions.wipeRotation)),
-                    app::CmdLineFlagOption::create(
-                        p.options.createOtioTimeline, {"-otio", "-o", "-edl"},
-                        _("Create OpenTimelineIO EDL from the list of clips "
-                          "provided.")),
-                    app::CmdLineFlagOption::create(
-                        p.options.otioEditMode, {"-editMode", "-e"},
-                        _("OpenTimelineIO Edit mode.")),
-                    app::CmdLineFlagOption::create(
-                        p.options.singleImages, {"--single", "-single", "-s"},
-                        _("Load the images as still images not sequences.")),
-                    app::CmdLineValueOption<double>::create(
-                        p.options.speed, {"-speed"}, _("Playback speed.")),
-                    app::CmdLineValueOption<timeline::Playback>::create(
-                        p.options.playback, {"-playback", "-p"},
-                        _("Playback mode."),
-                        string::Format("{0}").arg(timeline::Playback::Stop),
-                        string::join(timeline::getPlaybackLabels(), ", ")),
-                    app::CmdLineValueOption<timeline::Loop>::create(
-                        p.options.loop, {"-loop"}, _("Playback loop mode."),
-                        string::Format("{0}").arg(timeline::Loop::Loop),
-                        string::join(timeline::getLoopLabels(), ", ")),
-                    app::CmdLineValueOption<otime::RationalTime>::create(
-                        p.options.seek, {"-seek"},
-                        _("Seek to the given time, in value/fps format.  "
-                          "Example: 50/30.")),
-                    app::CmdLineValueOption<otime::TimeRange>::create(
-                        p.options.inOutRange, {"-inOutRange", "-inout"},
-                        _("Set the in/out points range in start/end/fps "
-                          "format, like 23/120/24.")),
-                    app::CmdLineValueOption<std::string>::create(
-                        p.options.ocioOptions.input,
-                        {"-ocioInput", "-ics", "-oi"},
-                        _("OpenColorIO input color space.")),
-                    app::CmdLineValueOption<std::string>::create(
-                        p.options.ocioOptions.display, {"-ocioDisplay", "-od"},
-                        _("OpenColorIO display name.")),
-                    app::CmdLineValueOption<std::string>::create(
-                        p.options.ocioOptions.view, {"-ocioView", "-ov"},
-                        _("OpenColorIO view name.")),
-                    app::CmdLineValueOption<std::string>::create(
-                        p.options.ocioOptions.look, {"-ocioLook", "-ol"},
-                        _("OpenColorIO look name.")),
-                    app::CmdLineValueOption<std::string>::create(
-                        p.options.lutOptions.fileName, {"-lut"},
-                        _("LUT file name.")),
-                    app::CmdLineValueOption<timeline::LUTOrder>::create(
-                        p.options.lutOptions.order, {"-lutOrder"},
-                        _("LUT operation order."),
-                        string::Format("{0}").arg(p.options.lutOptions.order),
-                        string::join(timeline::getLUTOrderLabels(), ", ")),
+                app::CmdLineValueOption<int>::create(
+                    Preferences::logLevel, {"-logLevel", "-l"},
+                    _("Log verbosity."),
+                    string::Format("{0}").arg(Preferences::logLevel)),
+                app::CmdLineValueOption<std::string>::create(
+                    p.options.audioFileName, {"-audio", "-a"},
+                    _("Audio file name.")),
+                app::CmdLineValueOption<std::string>::create(
+                    p.options.compareFileName, {"-compare", "-b"},
+                    _("A/B comparison \"B\" file name.")),
+                app::CmdLineValueOption<timeline::CompareMode>::create(
+                    p.options.compareOptions.mode, {"-compareMode", "-c"},
+                    _("A/B comparison mode."),
+                    string::Format("{0}").arg(p.options.compareOptions.mode),
+                    string::join(timeline::getCompareModeLabels(), ", ")),
+                app::CmdLineValueOption<math::Vector2f>::create(
+                    p.options.compareOptions.wipeCenter, {"-wipeCenter", "-wc"},
+                    _("A/B comparison wipe center."),
+                    string::Format("{0}").arg(
+                        p.options.compareOptions.wipeCenter)),
+                app::CmdLineValueOption<float>::create(
+                    p.options.compareOptions.wipeRotation,
+                    {"-wipeRotation", "-wr"},
+                    _("A/B comparison wipe rotation."),
+                    string::Format("{0}").arg(
+                        p.options.compareOptions.wipeRotation)),
+                app::CmdLineFlagOption::create(
+                    p.options.createOtioTimeline, {"-otio", "-o", "-edl"},
+                    _("Create OpenTimelineIO EDL from the list of clips "
+                      "provided.")),
+                app::CmdLineFlagOption::create(
+                    p.options.otioEditMode, {"-editMode", "-e"},
+                    _("OpenTimelineIO Edit mode.")),
+                app::CmdLineFlagOption::create(
+                    p.options.singleImages, {"-single", "-s"},
+                    _("Load the images as still images not sequences.")),
+                app::CmdLineValueOption<double>::create(
+                    p.options.speed, {"-speed"}, _("Playback speed.")),
+                app::CmdLineValueOption<timeline::Playback>::create(
+                    p.options.playback, {"-playback", "-p"},
+                    _("Playback mode."),
+                    string::Format("{0}").arg(timeline::Playback::Stop),
+                    string::join(timeline::getPlaybackLabels(), ", ")),
+                app::CmdLineValueOption<timeline::Loop>::create(
+                    p.options.loop, {"-loop"}, _("Playback loop mode."),
+                    string::Format("{0}").arg(timeline::Loop::Loop),
+                    string::join(timeline::getLoopLabels(), ", ")),
+                app::CmdLineValueOption<otime::RationalTime>::create(
+                    p.options.seek, {"-seek"},
+                    _("Seek to the given time, in value/fps format.  "
+                      "Example: 50/30.")),
+                app::CmdLineValueOption<otime::TimeRange>::create(
+                    p.options.inOutRange, {"-inOutRange", "-inout"},
+                    _("Set the in/out points range in start/end/fps "
+                      "format, like 23/120/24.")),
+                app::CmdLineValueOption<std::string>::create(
+                    p.options.ocioOptions.input, {"-ocioInput", "-ics", "-oi"},
+                    _("OpenColorIO input color space.")),
+                app::CmdLineValueOption<std::string>::create(
+                    p.options.ocioOptions.display, {"-ocioDisplay", "-od"},
+                    _("OpenColorIO display name.")),
+                app::CmdLineValueOption<std::string>::create(
+                    p.options.ocioOptions.view, {"-ocioView", "-ov"},
+                    _("OpenColorIO view name.")),
+                app::CmdLineValueOption<std::string>::create(
+                    p.options.ocioOptions.look, {"-ocioLook", "-ol"},
+                    _("OpenColorIO look name.")),
+                app::CmdLineValueOption<std::string>::create(
+                    p.options.lutOptions.fileName, {"-lut"},
+                    _("LUT file name.")),
+                app::CmdLineValueOption<timeline::LUTOrder>::create(
+                    p.options.lutOptions.order, {"-lutOrder"},
+                    _("LUT operation order."),
+                    string::Format("{0}").arg(p.options.lutOptions.order),
+                    string::join(timeline::getLUTOrderLabels(), ", ")),
 #ifdef MRV2_PYBIND11
-                    app::CmdLineValueOption<std::string>::create(
-                        p.options.pythonScript, {"-pythonScript", "-ps"},
-                        _("Python Script to run and exit.")),
-                    app::CmdLineValueOption<std::string>::create(
-                        p.options.pythonArgs, {"-pythonArgs", "-pa"},
-                        _("Python Arguments to pass to the Python script as a "
-                          "single quoted string like \"arg1 'arg2 asd' arg3\", "
-                          "stored in cmd.argv.")),
+                app::CmdLineValueOption<std::string>::create(
+                    p.options.pythonScript, {"-pythonScript", "-ps"},
+                    _("Python Script to run and exit.")),
+                app::CmdLineValueOption<std::string>::create(
+                    p.options.pythonArgs, {"-pythonArgs", "-pa"},
+                    _("Python Arguments to pass to the Python script as a "
+                      "single quoted string like \"arg1 'arg2 asd' arg3\", "
+                      "stored in cmd.argv.")),
 #endif
-                    app::CmdLineFlagOption::create(
-                        p.options.resetSettings, {"-resetSettings"},
-                        _("Reset settings to defaults.")),
-                    app::CmdLineFlagOption::create(
-                        p.options.resetHotkeys, {"-resetHotkeys"},
-                        _("Reset hotkeys to defaults.")),
+                app::CmdLineFlagOption::create(
+                    p.options.resetSettings, {"-resetSettings"},
+                    _("Reset settings to defaults.")),
+                app::CmdLineFlagOption::create(
+                    p.options.resetHotkeys, {"-resetHotkeys"},
+                    _("Reset hotkeys to defaults.")),
 #if defined(TLRENDER_USD)
-                    app::CmdLineValueOption<bool>::create(
-                        p.options.usdOverrides, {"-usd", "-usdOverrides"},
-                        "USD overrides.",
-                        string::Format("{0}").arg(p.options.usdOverrides)),
-                    app::CmdLineValueOption<int>::create(
-                        p.options.usd.renderWidth, {"-usdRenderWidth"},
-                        "USD render width.",
-                        string::Format("{0}").arg(p.options.usd.renderWidth)),
-                    app::CmdLineValueOption<float>::create(
-                        p.options.usd.complexity, {"-usdComplexity"},
-                        "USD render complexity setting.",
-                        string::Format("{0}").arg(p.options.usd.complexity)),
-                    app::CmdLineValueOption<tl::usd::DrawMode>::create(
-                        p.options.usd.drawMode, {"-usdDrawMode"},
-                        "USD render draw mode.",
-                        string::Format("{0}").arg(p.options.usd.drawMode),
-                        string::join(tl::usd::getDrawModeLabels(), ", ")),
-                    app::CmdLineValueOption<bool>::create(
-                        p.options.usd.enableLighting, {"-usdEnableLighting"},
-                        "USD render enable lighting setting.",
-                        string::Format("{0}").arg(
-                            p.options.usd.enableLighting)),
-                    app::CmdLineValueOption<bool>::create(
-                        p.options.usd.enableSceneLights,
-                        {"-usdEnableSceneLights"},
-                        "USD render enable scene lights setting.",
-                        string::Format("{0}").arg(
-                            p.options.usd.enableSceneLights)),
-                    app::CmdLineValueOption<bool>::create(
-                        p.options.usd.enableSceneMaterials,
-                        {"-usdEnableSceneMaterials"},
-                        "USD render enable scene materials setting.",
-                        string::Format("{0}").arg(
-                            p.options.usd.enableSceneMaterials)),
-                    app::CmdLineValueOption<bool>::create(
-                        p.options.usd.sRGB, {"-usdSRGB"},
-                        "USD render SRGB setting.",
-                        string::Format("{0}").arg(p.options.usd.sRGB)),
-                    app::CmdLineValueOption<size_t>::create(
-                        p.options.usd.stageCache, {"-usdStageCache"},
-                        "USD stage cache size.",
-                        string::Format("{0}").arg(p.options.usd.stageCache)),
-                    app::CmdLineValueOption<size_t>::create(
-                        p.options.usd.diskCache, {"-usdDiskCache"},
-                        "USD disk cache size in gigabytes. A size of zero "
-                        "disables the cache.",
-                        string::Format("{0}").arg(p.options.usd.diskCache)),
+                app::CmdLineValueOption<bool>::create(
+                    p.options.usdOverrides, {"-usd", "-usdOverrides"},
+                    "USD overrides.",
+                    string::Format("{0}").arg(p.options.usdOverrides)),
+                app::CmdLineValueOption<int>::create(
+                    p.options.usd.renderWidth, {"-usdRenderWidth"},
+                    "USD render width.",
+                    string::Format("{0}").arg(p.options.usd.renderWidth)),
+                app::CmdLineValueOption<float>::create(
+                    p.options.usd.complexity, {"-usdComplexity"},
+                    "USD render complexity setting.",
+                    string::Format("{0}").arg(p.options.usd.complexity)),
+                app::CmdLineValueOption<tl::usd::DrawMode>::create(
+                    p.options.usd.drawMode, {"-usdDrawMode"},
+                    "USD render draw mode.",
+                    string::Format("{0}").arg(p.options.usd.drawMode),
+                    string::join(tl::usd::getDrawModeLabels(), ", ")),
+                app::CmdLineValueOption<bool>::create(
+                    p.options.usd.enableLighting, {"-usdEnableLighting"},
+                    "USD render enable lighting setting.",
+                    string::Format("{0}").arg(p.options.usd.enableLighting)),
+                app::CmdLineValueOption<bool>::create(
+                    p.options.usd.enableSceneLights, {"-usdEnableSceneLights"},
+                    "USD render enable scene lights setting.",
+                    string::Format("{0}").arg(p.options.usd.enableSceneLights)),
+                app::CmdLineValueOption<bool>::create(
+                    p.options.usd.enableSceneMaterials,
+                    {"-usdEnableSceneMaterials"},
+                    "USD render enable scene materials setting.",
+                    string::Format("{0}").arg(
+                        p.options.usd.enableSceneMaterials)),
+                app::CmdLineValueOption<bool>::create(
+                    p.options.usd.sRGB, {"-usdSRGB"},
+                    "USD render SRGB setting.",
+                    string::Format("{0}").arg(p.options.usd.sRGB)),
+                app::CmdLineValueOption<size_t>::create(
+                    p.options.usd.stageCache, {"-usdStageCache"},
+                    "USD stage cache size.",
+                    string::Format("{0}").arg(p.options.usd.stageCache)),
+                app::CmdLineValueOption<size_t>::create(
+                    p.options.usd.diskCache, {"-usdDiskCache"},
+                    "USD disk cache size in gigabytes. A size of zero "
+                    "disables the cache.",
+                    string::Format("{0}").arg(p.options.usd.diskCache)),
 #endif // TLRENDER_USD
 #ifdef MRV2_NETWORK
-                    app::CmdLineFlagOption::create(
-                        p.options.server, {"-server"},
-                        _("Start a server.  Use -port to specify a port "
-                          "number.")),
-                    app::CmdLineValueOption<std::string>::create(
-                        p.options.client, {"-client"},
-                        _("Connect to a server at <value>.  Use -port to "
-                          "specify a port number.")),
-                    app::CmdLineValueOption<unsigned>::create(
-                        p.options.port, {"-port"},
-                        _("Port number for the server to listen to or for the "
-                          "client to connect to."),
-                        string::Format("{0}").arg(p.options.port)),
+                app::CmdLineFlagOption::create(
+                    p.options.server, {"-server"},
+                    _("Start a server.  Use -port to specify a port "
+                      "number.")),
+                app::CmdLineValueOption<std::string>::create(
+                    p.options.client, {"-client"},
+                    _("Connect to a server at <value>.  Use -port to "
+                      "specify a port number.")),
+                app::CmdLineValueOption<unsigned>::create(
+                    p.options.port, {"-port"},
+                    _("Port number for the server to listen to or for the "
+                      "client to connect to."),
+                    string::Format("{0}").arg(p.options.port)),
 #endif
 
-                    app::CmdLineFlagOption::create(
-                        p.options.displayVersion,
-                        {"-version", "--version", "-v", "--v"},
-                        _("Return the version and exit."))
-            });
+                app::CmdLineFlagOption::create(
+                    p.options.displayVersion, {"-version", "-v"},
+                    _("Return the version and exit."))});
 
+        DBG;
         const int exitCode = getExit();
         if (exitCode != 0)
         {
+            DBG;
             return;
         }
 
+        DBG;
         file::Path lastPath;
         const auto& unusedArgs = getUnusedArgs();
         for (const auto& unused : unusedArgs)
@@ -497,12 +517,24 @@ namespace mrv
         DBG;
         // Initialize FLTK.
         Fl::scheme("gtk+");
+        DBG;
         Fl::option(Fl::OPTION_VISIBLE_FOCUS, false);
+        DBG;
         Fl::use_high_res_GL(true);
+        DBG;
+
+        
+        
         Fl::set_fonts("-*");
+        DBG;
         Fl::lock(); // needed for NDI and multithreaded logging
 
         DBG;
+        // Create the Settings
+        p.settings = new SettingsObject();
+
+        DBG;
+        
         // Create the interface.
         ui = new ViewerUI();
         if (!ui)
@@ -511,12 +543,10 @@ namespace mrv
         }
         DBG;
 
-        // Create the Settings
-        p.settings = new SettingsObject();
-
         // Classes used to handle network connections
 #ifdef MRV2_NETWORK
         p.commandInterpreter = new CommandInterpreter(ui);
+        DBG;
 #endif
         tcp = new DummyClient();
 
@@ -525,7 +555,7 @@ namespace mrv
         DBG;
 #ifdef __APPLE__
         Fl_Mac_App_Menu::about = _("About mrv2");
-        Fl_Mac_App_Menu::print = "";
+        Fl_Mac_App_Menu::print = "Print Front Window";
         Fl_Mac_App_Menu::hide = _("Hide mrv2");
         Fl_Mac_App_Menu::hide_others = _("Hide Others");
         Fl_Mac_App_Menu::services = _("Services");
@@ -549,20 +579,40 @@ namespace mrv
         DBG;
         uiLogDisplay = new LogDisplay(0, 20, 340, 320);
 
+        DBG;
         std::string version = "mrv2 v";
         version += mrv::version();
         version += " ";
         version += mrv::build_date();
-        LOG_INFO(version);
-
-        version = mrv::os::getVersion();
-        LOG_INFO(version);
-#ifdef __linux__
-        LOG_INFO(mrv::os::getDesktop());
-#endif
-        LOG_INFO(_("Running from ") << mrv::rootpath());
-        LOG_INFO(msg);
+        LOG_STATUS(version);
+        LOG_STATUS(msg);
+        
         DBG;
+
+        {
+            const std::string& info = mrv::build_info();
+            const auto& lines = string::split(info, '\n');
+            for (auto line : lines)
+            {
+                LOG_STATUS(line);
+            }
+        }
+
+        {
+            const std::string& info = mrv::running_info();
+            const auto& lines = string::split(info, '\n');
+            for (auto line : lines)
+            {
+                LOG_STATUS(line);
+            }
+        }
+
+        LOG_STATUS(_("Install Location: "));
+        LOG_STATUS("\t" << mrv::rootpath());
+        DBG;
+        
+        LOG_STATUS(_("Preferences Location: "));
+        LOG_STATUS("\t" << mrv::prefspath());
 
         // Create the main control.
         p.mainControl = new MainControl(ui);
@@ -623,10 +673,45 @@ namespace mrv
         }
 #endif // TLRENDER_USD
 
-#ifdef TLRENDER_NDI
-        if (!NDIlib_initialize())
-            throw std::runtime_error(_("Could not initialize NDI"));
-#endif
+#if defined(TLRENDER_BMD)
+        device::DevicesModelData bmdDevicesModelData;
+        p.settings->setDefaultValue(
+            "BMD/DeviceIndex", bmdDevicesModelData.deviceIndex);
+        p.settings->setDefaultValue(
+            "BMD/DisplayModeIndex", bmdDevicesModelData.displayModeIndex);
+        p.settings->setDefaultValue(
+            "BMD/PixelTypeIndex", bmdDevicesModelData.pixelTypeIndex);
+        p.settings->setDefaultValue(
+            "BMD/DeviceEnabled", bmdDevicesModelData.deviceEnabled);
+        const auto i = bmdDevicesModelData.boolOptions.find(
+            device::Option::_444SDIVideoOutput);
+        p.settings->setDefaultValue(
+            "BMD/444SDIVideoOutput",
+            i != bmdDevicesModelData.boolOptions.end() ? i->second : false);
+        p.settings->setDefaultValue("BMD/HDRMode", bmdDevicesModelData.hdrMode);
+        p.settings->setDefaultValue("BMD/HDRData", bmdDevicesModelData.hdrData);
+#endif // TLRENDER_BMD
+
+#if defined(TLRENDER_NDI)
+
+        device::DevicesModelData devicesModelData;
+        p.settings->setDefaultValue(
+            "NDI/DeviceIndex", devicesModelData.deviceIndex);
+        p.settings->setDefaultValue(
+            "NDI/DisplayModeIndex", devicesModelData.displayModeIndex);
+        p.settings->setDefaultValue(
+            "NDI/PixelTypeIndex", devicesModelData.pixelTypeIndex);
+        p.settings->setDefaultValue(
+            "NDI/DeviceEnabled", devicesModelData.deviceEnabled);
+        const auto i = devicesModelData.boolOptions.find(
+            device::Option::_444SDIVideoOutput);
+        p.settings->setDefaultValue(
+            "NDI/444SDIVideoOutput",
+            i != devicesModelData.boolOptions.end() ? i->second : false);
+        // p.settings->setDefaultValue("NDI/HDRMode", devicesModelData.hdrMode);
+        // p.settings->setDefaultValue("NDI/HDRData", devicesModelData.hdrData);
+
+#endif // TLRENDER_NDI
 
         p.volume = p.settings->getValue<float>("Audio/Volume");
         p.mute = p.settings->getValue<bool>("Audio/Mute");
@@ -669,6 +754,72 @@ namespace mrv
                     }
                 });
 
+#if defined(TLRENDER_BMD)
+        p.devicesObserver =
+            observer::ValueObserver<device::DevicesModelData>::create(
+                p.devicesModel->observeData(),
+                [this](const device::DevicesModelData& value)
+                {
+                    TLRENDER_P();
+
+                    device::DeviceConfig config;
+                    config.deviceIndex = value.deviceIndex - 1;
+                    config.displayModeIndex = value.displayModeIndex - 1;
+                    config.pixelType =
+                        value.pixelTypeIndex >= 0 &&
+                                value.pixelTypeIndex < value.pixelTypes.size()
+                            ? value.pixelTypes[value.pixelTypeIndex]
+                            : device::PixelType::None;
+                    config.boolOptions = value.boolOptions;
+                    p.outputDevice->setConfig(config);
+                    p.outputDevice->setEnabled(value.deviceEnabled);
+                    p.putputVideoLevels = value.videoLevels;
+                    timeline::DisplayOptions displayOptions =
+                        p.viewportModel->getDisplayOptions();
+                    displayOptions.videoLevels = p.bmdOutputVideoLevels;
+                    p.outputDevice->setDisplayOptions({displayOptions});
+                    p.outputDevice->setHDR(value.hdrMode, value.hdrData);
+
+                    p.settings->setValue("BMD/DeviceIndex", value.deviceIndex);
+                    p.settings->setValue(
+                        "BMD/DisplayModeIndex", value.displayModeIndex);
+                    p.settings->setValue(
+                        "BMD/PixelTypeIndex", value.pixelTypeIndex);
+                    p.settings->setValue(
+                        "BMD/DeviceEnabled", value.deviceEnabled);
+                    const auto i = value.boolOptions.find(
+                        device::Option::_444SDIVideoOutput);
+                    p.settings->setValue(
+                        "BMD/444SDIVideoOutput",
+                        i != value.boolOptions.end() ? i->second : false);
+                    // p.settings->setValue("NDI/HDRMode", value.hdrMode);
+                    // p.settings->setValue("NDI/HDRData", value.hdrData);
+                });
+
+        p.bmdActiveObserver = observer::ValueObserver<bool>::create(
+            p.bmdOutputDevice->observeActive(),
+            [this](bool value)
+            {
+                _p->bmdDeviceActive = value;
+                _audioUpdate();
+            });
+        p.bmdSizeObserver = observer::ValueObserver<math::Size2i>::create(
+            p.bmdOutputDevice->observeSize(),
+            [this](const math::Size2i& value)
+            {
+                // std::cout << "output device size: " << value << std::endl;
+            });
+        p.bmdFrameRateObserver =
+            observer::ValueObserver<otime::RationalTime>::create(
+                p.bmdOutputDevice->observeFrameRate(),
+                [this](const otime::RationalTime& value)
+                {
+                    // std::cout << "output device frame rate: " << value <<
+                    // std::endl;
+                });
+
+#endif // TLRENDER_BMD || TLRENDER_NDI
+
         p.logObserver = observer::ListObserver<log::Item>::create(
             ui->app->getContext()->getLogSystem()->observeLog(),
             [this](const std::vector<log::Item>& value)
@@ -709,7 +860,7 @@ namespace mrv
 
                         lastStatusMessage = msg;
 
-                        LOG_INFO(msg);
+                        LOG_STATUS(msg);
                         break;
                     }
                     default:
@@ -728,6 +879,34 @@ namespace mrv
         if (p.options.singleImages)
         {
             p.settings->setValue("Misc/MaxFileSequenceDigits", 0);
+        }
+
+#ifdef MRV2_PYBIND11
+        // Create Python's output window
+        Fl_Group::current(0);
+        outputDisplay = new PythonOutput(0, 0, 400, 400);
+#endif
+
+        //
+        // Show the UI if no python script was fed in.
+        //
+        // We make sure the UI is visible when we feed a filename.
+        // This is needed to avoid an issue with Wayland not properly
+        // refreshing the play buttons.
+#ifdef MRV2_PYBIND11
+        if (p.options.pythonScript.empty())
+#endif
+        {
+            ui->uiMain->show();
+            ui->uiView->take_focus();
+
+            // Fix for always on top on Linux
+            bool value = ui->uiPrefs->uiPrefsAlwaysOnTop->value();
+            int fullscreen_active = ui->uiMain->fullscreen_active();
+            if (!fullscreen_active)
+            {
+                ui->uiMain->always_on_top(value);
+            }
         }
 
         if (!p.options.fileNames.empty())
@@ -874,15 +1053,17 @@ namespace mrv
             LOG_ERROR(e.what());
         }
 
-#ifdef MRV2_PYBIND11        
+#ifdef MRV2_PYBIND11
+        DBG;
         // Import the mrv2 python module so we read all python
         // plug-ins.
         py::module::import("mrv2");
+        DBG;
 
-        
         // Discover Python plugins
         mrv2_discover_python_plugins();
-        
+        DBG;
+
         //
         // Run command-line python script.
         //
@@ -917,17 +1098,17 @@ namespace mrv
 
             p.pythonArgs = std::make_unique<PythonArgs>(p.options.pythonArgs);
 
-            LOG_INFO(std::string(
+            LOG_STATUS(std::string(
                 string::Format(_("Running python script '{0}'")).arg(script)));
             const auto& args = p.pythonArgs->getArguments();
 
             if (!args.empty())
             {
-                LOG_INFO(_("with Arguments:"));
+                LOG_STATUS(_("with Arguments:"));
                 std::string out = "[";
                 out += tl::string::join(args, ',');
                 out += "]";
-                LOG_INFO(out);
+                LOG_STATUS(out);
             }
 
             std::ifstream is(script);
@@ -949,27 +1130,10 @@ namespace mrv
             return;
         }
 
-        // Create Python's output window
-        Fl_Group::current(0);
-        outputDisplay = new PythonOutput(0, 0, 400, 400);
-
+        DBG;
         // Redirect Python's stdout/stderr to my own class
         p.pythonStdErrOutRedirect.reset(new PyStdErrOutStreamRedirect);
 #endif
-
-        //
-        // Show the UI
-        //
-        ui->uiMain->show();
-        ui->uiView->take_focus();
-
-        // Fix for always on top on Linux
-        bool value = ui->uiPrefs->uiPrefsAlwaysOnTop->value();
-        int fullscreen_active = ui->uiMain->fullscreen_active();
-        if (!fullscreen_active)
-        {
-            ui->uiMain->always_on_top(value);
-        }
 
         // Open Panel Windows if not loading a session file.
         if (!p.session)
@@ -988,12 +1152,7 @@ namespace mrv
     void App::cleanResources()
     {
         TLRENDER_P();
-
-#ifdef TLRENDER_NDI
-        // Not required, but nice
-        NDIlib_destroy();
-#endif
-
+        
         delete p.mainControl;
         p.mainControl = nullptr;
 
@@ -1234,6 +1393,155 @@ namespace mrv
         return _p->running;
     }
 
+    const std::shared_ptr<device::DevicesModel>& App::devicesModel() const
+    {
+        return _p->devicesModel;
+    }
+
+    const std::shared_ptr<device::IOutput>& App::outputDevice() const
+    {
+        return _p->outputDevice;
+    }
+    
+#if defined(TLRENDER_BMD) || defined(TLRENDER_NDI)
+    void App::_timer_update_cb(App* self)
+    {
+        self->timerUpdate();
+    }
+
+    void App::timerUpdate()
+    {
+        TLRENDER_P();
+
+        if (p.outputDevice)
+            p.outputDevice->tick();
+
+        Fl::repeat_timeout(
+            kTimeout, (Fl_Timeout_Handler)_timer_update_cb, this);
+    }
+
+    void App::_startOutputDeviceTimer()
+    {
+        TLRENDER_P();
+
+        // Needed to refresh the outputDevice annotations
+        ui->uiView->redraw();
+
+        if (p.outputDevice)
+        {
+            p.outputDevice->setPlayer(p.player ? p.player->player() : nullptr);
+            p.outputDevice->setEnabled(true);
+        }
+        
+        Fl::add_timeout(kTimeout, (Fl_Timeout_Handler)_timer_update_cb, this);
+    }
+
+    void App::_stopOutputDeviceTimer()
+    {
+        TLRENDER_P();
+
+        if (p.outputDevice)
+            p.outputDevice->setEnabled(false);
+        
+        // \@todo: Remove.  Needed to refresh the viewport annotations
+        ui->uiView->redraw();
+        
+        Fl::remove_timeout((Fl_Timeout_Handler)_timer_update_cb, this);
+    }
+#endif // TLRENDER_BMD || TLRENDER_NDI
+
+#ifdef TLRENDER_NDI
+    void App::beginNDIOutputStream()
+    {
+        TLRENDER_P();
+        device::DeviceConfig config;
+        p.outputDevice = ndi::OutputDevice::create(_context);
+        p.outputDevice->setConfig(config);
+        p.devicesModel = device::DevicesModel::create(_context);
+        p.devicesModel->setDeviceIndex(
+            p.settings->getValue<int>("NDI/DeviceIndex"));
+        p.devicesModel->setDisplayModeIndex(
+            p.settings->getValue<int>("NDI/DisplayModeIndex"));
+        p.devicesModel->setPixelTypeIndex(
+            p.settings->getValue<int>("NDI/PixelTypeIndex"));
+        p.devicesModel->setDeviceEnabled(
+            p.settings->getValue<bool>("NDI/DeviceEnabled"));
+        device::BoolOptions deviceBoolOptions;
+        deviceBoolOptions[device::Option::_444SDIVideoOutput] =
+            p.settings->getValue<bool>("NDI/444SDIVideoOutput");
+        p.devicesModel->setBoolOptions(deviceBoolOptions);
+        p.devicesModel->setHDRMode(static_cast<device::HDRMode>(
+            p.settings->getValue<int>("NDI/HDRMode")));
+        std::string s = p.settings->getValue<std::string>("NDI/HDRData");
+        if (!s.empty())
+        {
+            auto json = nlohmann::json::parse(s);
+            image::HDRData hdrData;
+            try
+            {
+                from_json(json, hdrData);
+            }
+            catch (const std::exception&)
+            {
+            }
+            p.devicesModel->setHDRData(hdrData);
+        }
+        _startOutputDeviceTimer();
+    }
+
+    void App::endNDIOutputStream()
+    {
+        _stopOutputDeviceTimer();
+        _p->outputDevice.reset();
+        _p->devicesModel.reset();
+    }
+#endif
+
+#ifdef TLRENDER_BMD
+    void App::beginBMDOutputStream()
+    {
+        TLRENDER_P();
+        p.outputDevice = bmd::OutputDevice::create(_context);
+        p.devicesModel = device::DevicesModel::create(_context);
+        p.devicesModel->setDeviceIndex(
+            p.settings->getValue<int>("BMD/DeviceIndex"));
+        p.devicesModel->setDisplayModeIndex(
+            p.settings->getValue<int>("BMD/DisplayModeIndex"));
+        p.devicesModel->setPixelTypeIndex(
+            p.settings->getValue<int>("BMD/PixelTypeIndex"));
+        p.devicesModel->setDeviceEnabled(
+            p.settings->getValue<bool>("BMD/DeviceEnabled"));
+        device::BoolOptions deviceBoolOptions;
+        deviceBoolOptions[bmd::Option::_444SDIVideoOutput] =
+            p.settings->getValue<bool>("BMD/444SDIVideoOutput");
+        p.devicesModel->setBoolOptions(deviceBoolOptions);
+        p.devicesModel->setHDRMode(static_cast<device::HDRMode>(
+            p.settings->getValue<int>("BMD/HDRMode")));
+        std::string s = p.settings->getValue<std::string>("BMD/HDRData");
+        if (!s.empty())
+        {
+            auto json = nlohmann::json::parse(s);
+            image::HDRData hdrData;
+            try
+            {
+                from_json(json, hdrData);
+            }
+            catch (const std::exception&)
+            {
+            }
+            p.devicesModel->setHDRData(hdrData);
+        }
+        _startOutputDeviceTimer();
+    }
+
+    void App::endBMDOutputStream()
+    {
+        _stopOutputDeviceTimer();
+        _p->outputDevice.reset();
+        _p->devicesModel.reset();
+    }
+#endif
+
     void
     App::open(const std::string& fileName, const std::string& audioFileName)
     {
@@ -1324,8 +1632,10 @@ namespace mrv
     void App::setDisplayOptions(const timeline::DisplayOptions& value)
     {
         TLRENDER_P();
+
         if (value == p.displayOptions)
             return;
+
         p.displayOptions = value;
         displayOptionsChanged(p.displayOptions);
     }
@@ -1339,7 +1649,6 @@ namespace mrv
         msg["command"] = "Display Options";
         msg["value"] = opts;
         tcp->pushMessage(msg);
-        ui->uiMain->fill_menu(ui->uiMenuBar);
     }
 
     void App::setVolume(float value)
@@ -1393,12 +1702,25 @@ namespace mrv
 #if defined(TLRENDER_EXR)
         out["OpenEXR/IgnoreDisplayWindow"] =
             string::Format("{0}").arg(ui->uiView->getIgnoreDisplayWindow());
+        out["IgnoreChromaticities"] =
+            string::Format("{0}").arg(p.displayOptions.ignoreChromaticities);
 #endif
 #if defined(TLRENDER_EXR) || defined(TLRENDER_STB)
         out["AutoNormalize"] =
             string::Format("{0}").arg(p.displayOptions.normalize.enabled);
         out["InvalidValues"] =
             string::Format("{0}").arg(p.displayOptions.invalidValues);
+#endif
+
+#if defined(TLRENDER_EXR)
+        int xLevel = 0, yLevel = 0;
+        if (panel::imageInfoPanel)
+        {
+            xLevel = panel::imageInfoPanel->getXLevel();
+            yLevel = panel::imageInfoPanel->getYLevel();
+        }
+        out["X Level"] = string::Format("{0}").arg(xLevel);
+        out["Y Level"] = string::Format("{0}").arg(yLevel);
 #endif
 
 #if defined(TLRENDER_FFMPEG)
@@ -1524,25 +1846,30 @@ namespace mrv
             p.settings->getValue<int>("Misc/MaxFileSequenceDigits"), 255);
 
         otio::SerializableObject::Retainer<otio::Timeline> otioTimeline;
+        otime::RationalTime offsetTime;
+        double value = ui->uiPrefs->uiStartTimeOffset->value();
+        offsetTime = otime::RationalTime(value, 24.0); // rate is not used.
 
         if (file::isUSD(item->path))
         {
 #ifdef MRV2_PYBIND11
             py::gil_scoped_release release;
 #endif
-            otioTimeline =
-                item->audioPath.isEmpty()
-                    ? timeline::create(item->path, _context, options)
-                    : timeline::create(
-                          item->path, item->audioPath, _context, options);
+            otioTimeline = item->audioPath.isEmpty()
+                               ? timeline::create(
+                                     item->path, _context, offsetTime, options)
+                               : timeline::create(
+                                     item->path, item->audioPath, _context,
+                                     offsetTime, options);
         }
         else
         {
-            otioTimeline =
-                item->audioPath.isEmpty()
-                    ? timeline::create(item->path, _context, options)
-                    : timeline::create(
-                          item->path, item->audioPath, _context, options);
+            otioTimeline = item->audioPath.isEmpty()
+                               ? timeline::create(
+                                     item->path, _context, offsetTime, options)
+                               : timeline::create(
+                                     item->path, item->audioPath, _context,
+                                     offsetTime, options);
         }
 
         auto out = timeline::Timeline::create(otioTimeline, _context, options);
@@ -1723,6 +2050,10 @@ namespace mrv
 
         p.activeFiles = activeFiles;
         p.player = player;
+#if defined(TLRENDER_BMD) || defined(TLRENDER_NDI)
+        if (p.outputDevice)
+            p.outputDevice->setPlayer(p.player ? p.player->player() : nullptr);
+#endif // TLRENDER_BMD
 
         _layersUpdate(p.filesModel->observeLayers()->get());
 
@@ -1743,7 +2074,6 @@ namespace mrv
                             set_edit_mode_cb(EditMode::kFull, ui);
                         }
                     }
-                    ui->uiView->take_focus();
                 }
                 else
                 {
@@ -1949,11 +2279,9 @@ namespace mrv
             p.player->setMute(p.mute);
         }
 
-#ifdef TLRENDER_BMD
+#if defined(TLRENDER_NDI) || defined(TLRENDER_BMD)
         if (p.outputDevice)
         {
-            // @todo:
-            //
             p.outputDevice->setVolume(p.volume);
             p.outputDevice->setMute(p.mute);
         }

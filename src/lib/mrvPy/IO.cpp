@@ -20,8 +20,7 @@ void mrv2_io(py::module& m)
     py::class_<mrv::SaveOptions>(io, "SaveOptions")
         .def(
             py::init<
-            bool, bool,
-            mrv::SaveResolution
+                bool, bool, bool, mrv::SaveResolution
 #ifdef TLRENDER_FFMPEG
                 ,
                 tl::ffmpeg::Profile, std::string, std::string,
@@ -30,29 +29,31 @@ void mrv2_io(py::module& m)
 #endif
 #ifdef TLRENDER_EXR
                 ,
-                tl::exr::Compression, tl::image::PixelType, int, float
+                Imf::Compression, tl::image::PixelType,
+            mrv::SaveContents, int, float
 #endif
                 >(),
-            py::arg("annotations") = false,
-            py::arg("video") = true,
+            py::arg("annotations") = false, py::arg("video") = true,
+            py::arg("saveVideo") = true,
             py::arg("resolution") = mrv::SaveResolution::kSameSize
 #ifdef TLRENDER_FFMPEG
             ,
             py::arg("ffmpegProfile") = tl::ffmpeg::Profile::None,
             py::arg("ffmpegPreset") = "",
             py::arg("ffmpegPixelFormat") = "YUV420P",
+            py::arg("ffmpegAudioCodec") = tl::ffmpeg::AudioCodec::None,
             py::arg("ffmpegHardwareEncode") = false,
             py::arg("ffmpegOverride") = false,
             py::arg("ffmpegColorRange") = "PC",
             py::arg("ffmpegColorSpace") = "bt709",
             py::arg("ffmpegColorPrimaries") = "bt709",
-            py::arg("ffmpegColorTRC") = "bt709",
-            py::arg("ffmpegAudioCodec") = tl::ffmpeg::AudioCodec::None
+            py::arg("ffmpegColorTRC") = "bt709"
 #endif
 #ifdef TLRENDER_EXR
             ,
-            py::arg("exrCompression") = tl::exr::Compression::ZIP,
+            py::arg("exrCompression") = Imf::ZIP_COMPRESSION,
             py::arg("exrPixelType") = tl::image::PixelType::RGBA_F16,
+            py::arg("exrSaveContents") = mrv::SaveContents::kDataWindow,
             py::arg("zipCompressionLevel") = 4,
             py::arg("dwaCompressionLevel") = 45.0F
 #endif
@@ -115,12 +116,28 @@ void mrv2_io(py::module& m)
                 std::stringstream s;
                 s << "<mrv2.io.SaveOptions "
                   << " annotations=" << (o.annotations ? "True" : "False")
+                  << " video=" << (o.video ? "True" : "False")
+                  << " saveVideo=" << (o.saveVideo ? "True" : "False")
 #ifdef TLRENDER_FFMPEG
                   << " ffmpegProfile=" << getLabel(o.ffmpegProfile)
+                  << " ffmpegPreset=" << o.ffmpegPreset
+                  << " ffmpegPixelFormat=" << o.ffmpegPixelFormat
                   << " ffmpegAudioCodec=" << getLabel(o.ffmpegAudioCodec)
+                  << " ffmpegHardwareEncode="
+                  << (o.ffmpegHardwareEncode ? "True" : "False")
+                  << " ffmpegOverride="
+                  << (o.ffmpegOverride ? "True" : "False")
+                  << " ffmpegColorRange=" << o.ffmpegColorRange
+                  << " ffmpegColorSpace=" << o.ffmpegColorSpace
+                  << " ffmpegColorPrimaries=" << o.ffmpegColorPrimaries
+                  << " ffmpegColorTRC=" << o.ffmpegColorTRC
 #endif
 #ifdef TLRENDER_EXR
-                  << " exrCompression=" << getLabel(o.exrCompression)
+                    ;
+                std::string name;
+                Imf::getCompressionNameFromId(o.exrCompression, name);
+                s << " exrCompression=" << name
+                  << " exrPixelType=" << getLabel(o.exrPixelType)
                   << " zipCompressionLevel=" << o.zipCompressionLevel
                   << " dwaCompressionLevel=" << o.dwaCompressionLevel
 #endif

@@ -12,10 +12,6 @@
 
 #include "mrViewer.h"
 
-#include "mrvCore/mrvFile.h"
-#include "mrvCore/mrvHotkey.h"
-#include "mrvCore/mrvColorSpaces.h"
-
 #include "mrvFl/mrvCallbacks.h"
 #include "mrvFl/mrvTimelinePlayer.h"
 
@@ -32,7 +28,12 @@
 #include "mrvNetwork/mrvTCP.h"
 
 #include "mrvApp/mrvSettingsObject.h"
+
+#include "mrvCore/mrvColorSpaces.h"
+#include "mrvCore/mrvFile.h"
+#include "mrvCore/mrvHotkey.h"
 #include "mrvCore/mrvUtil.h"
+
 #include "mrvFl/mrvIO.h"
 
 // #define DEBUG_EVENTS
@@ -1520,6 +1521,26 @@ namespace mrv
             else if (kNextChannel.match(rawkey))
             {
                 next_channel_cb(nullptr, p.ui);
+                return 1;
+            }
+            else if (kPreviousImage.match(rawkey))
+            {
+                previous_file_cb(nullptr, p.ui);
+                return 1;
+            }
+            else if (kNextImage.match(rawkey))
+            {
+                next_file_cb(nullptr, p.ui);
+                return 1;
+            }
+            else if (kPreviousImageLimited.match(rawkey))
+            {
+                previous_file_limited_cb(nullptr, p.ui);
+                return 1;
+            }
+            else if (kNextImageLimited.match(rawkey))
+            {
+                next_file_limited_cb(nullptr, p.ui);
                 return 1;
             }
             else if (

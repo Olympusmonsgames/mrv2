@@ -58,48 +58,199 @@ endfunction()
 function( is_system_lib TARGET ISSYSLIB )
 
     #
+    # Vulkan Libs to distribute on Linux and macOS
+    # 
+    set(_vulkan_libs
+	libglslang
+	libshaderc_combined
+	libSPIRV-Tools
+	libSPIRV-Tools-opt
+    )
+
+    if (APPLE)
+	list(APPEND _vulkan_libs
+	    libMoltenVK
+	    libvulkan)
+    endif()
+    
+    #
     # List of libraries that are accepted to distribute
     #
     set( _acceptedlibs
-	libavcodec libavdevice libavfilter libavformat libavutil libboost
-	libcairo libcap libcrypto liblcms2 libMaterial libmount libmd
-	libosd libraw libtbb libusd )
+	libavcodec
+	libavdevice
+	libavfilter
+	libavformat
+	libavutil
+	libcairo
+	libcrypto
+	liblcms2
+	libMaterial
+	libmd
+	libndi
+	libosd
+	libraw
+	libraw_r
+	libtbb
+	libusd 
+	${_vulkan_libs})
 
     #
-    # List of system libraries that should not be distributed
+    # List of system kde libraries that should not be distributed
     #
-    set( _syslibs
-	linux-vdso
-	ld-linux
-	libasound
-	libc
-	libdl
+    set(_kde_libs
+	libkwin
+	
+	libKF5ConfigCore
+	libKF5ConfigGui
+	libKF5CoreAddons
+	libKF5KIO
+	libKF5Notifications
+	libKF5Plasma
+	libKF5WaylandClient
+	libKF5WindowSystem
+	
+	libKF6ConfigCore
+	libKF6ConfigGui
+	libKF6CoreAddons
+	libKF6KIO
+	libKF6Notifications
+	libKF6Plasma
+	libKF6WaylandClient
+	libKF6WindowSystem
+	
+	libinput
+    )
+
+    set(_qt_libs	
+	libQt5Core
+	libQt5DBus
+	libQt5Gui
+	libQt5Widgets
+	libQt5WaylandClient
+	libQt5WaylandCompositor
+
+	libQt6Core
+	libQt6DBus
+	libQt6Gui
+	libQt6Widgets
+	libQt6WaylandClient
+	libQt6WaylandCompositor
+    )
+    
+    set(_gnome_libs
+	libcairo
+	libdrm
 	libdrm2
-	libharfbuzz
-	libfontconfig
-	libfreetype
-	libgcc_s
+	libgio
 	libglib
-	libgpg-error
+	libgobject
+	libpango
+	libwayland-client
+	libwayland-server
+	libxkbcommon
+    )
+
+    set(_x11_libs
+	libX11
+	libX11-xcb
+	libXau
+	libXaw7
+	libXaw
+	libXcomposite
+	libXcursor
+	libXdamage
+	libXdmcp
+	libXext
+	libXfixes
+	libXinerama
+	libXi
+	libXmu
+	libXmuu
+	libXpm
+	libXrender
+	libXrandr
+	libXRes
+	libXss
+	libxshmfence
+	libXt
+	libXtst
+	libXvMC
+	libXvMCW
+	libXv
+	libXxf86dga
+	libXxf86vm
+	
+	libxcb-shape
+	libxcb-xfixes
+	libxcb-render
+	libxcb-randr
+	libxcb-shm
+	libxcb-composite
+	libxcb
+    )
+
+    set(_opengl_libs
 	libEGL
 	libGL
 	libGLdispatch
 	libGLX
-	nvidia
-	libm
 	libOpenGL
-	libpthread
+	nvidia
+    )
+
+    set(_audio_libs
+	libasound
 	libpulse
 	libpulse-simple
+	librtaudio
+    )
+
+    set(_macos_libs )
+    if (APPLE)
+	set(_macos_libs
+	    X11
+	    tcl
+	    tk
+	)
+    endif()
+    
+    #
+    # List of system libraries that should *NOT* be distributed
+    #
+    set(_syslibs
+	linux-vdso
+	ld-linux
+	libblkid
+	libc
+	libcap         # was accepted
+	libdbus        # was accepted before
+	libdl
+	libharfbuzz
+	libfontconfig
+	libfreetype
+	libgbm
+	libgcc_s
+	libgpg-error
+	libm
+	libmount        # was accepted before - broke in Fedora 42, Wayland lib
+	libpthread
 	libresolv
 	librt
+	libsystemd
 	libtinfo
-	libwayland
-	libX
-	libxcb
-	libxshmfence
+	libudev
+	libutil          # was accepted before
 	libstdc
-	libz )
+	libz
+	${_audio_libs}
+	${_kde_libs}
+	${_gnome_libs}
+	${_qt_libs}
+	${_x11_libs}
+	${_opengl_libs}
+	${_macos_libs}
+    )
 
     
     set( ${ISSYSLIB} 0 PARENT_SCOPE)
@@ -121,29 +272,43 @@ function( is_system_lib TARGET ISSYSLIB )
 
 endfunction()
 
+set(INSTALLED_LIBRARIES "" CACHE INTERNAL "List of installed libraries")
+
 #
 # Function used to install a library  with all .so dependencies
 #
 function(install_library_with_deps LIBRARY)
-
+    list(FIND INSTALLED_LIBRARIES "${LIBRARY}" already_installed)
+    if (already_installed GREATER -1)
+        message(STATUS "SKIPPED (already installed) ${LIBRARY}")
+        return()
+    endif()
+    
     is_system_lib (${LIBRARY} sys_lib)
     if ( ${sys_lib} EQUAL 1 )
 	message( STATUS "SKIPPED installing ${LIBRARY}" )
 	return()
     endif()
-
+    
     file(INSTALL
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/lib"
 	TYPE SHARED_LIBRARY
 	FOLLOW_SYMLINK_CHAIN
 	FILES "${LIBRARY}"
-	)
+    )
+
+    list(APPEND INSTALLED_LIBRARIES "${LIBRARY}")
+    set(INSTALLED_LIBRARIES "${INSTALLED_LIBRARIES}" CACHE INTERNAL "List of installed libraries")
+
 endfunction()
 
 #
 # Function used to get runtime dependencies as cmake GET_RUNTIME_DEPENDENCIES is
 # broken.
 #
+
+set(PROCESSED_LIBRARIES "" CACHE INTERNAL "List of processed libraries")
+
 function( get_runtime_dependencies TARGET )
 
     foreach (exe ${TARGET})
@@ -155,10 +320,19 @@ function( get_runtime_dependencies TARGET )
 		string (REGEX REPLACE "^.* => | \(.*\)" "" pruned ${line})
 		string (STRIP ${pruned} dep_filename)
 		if (IS_ABSOLUTE ${dep_filename})
-		    is_system_lib (${dep_filename} sys_lib)
-		    if (sys_lib EQUAL 0 OR INSTALL_SYSLIBS STREQUAL "true")
-			install_library_with_deps( ${dep_filename} )
-		    endif()
+
+		    list(FIND PROCESSED_LIBRARIES "${dep_filename}" already_processed)
+                    if (already_processed EQUAL -1)
+                        list(APPEND PROCESSED_LIBRARIES "${dep_filename}")
+                        set(PROCESSED_LIBRARIES "${PROCESSED_LIBRARIES}" CACHE INTERNAL "List of processed libraries")
+
+			is_system_lib (${dep_filename} sys_lib)
+			if (sys_lib EQUAL 0 OR INSTALL_SYSLIBS STREQUAL "true")
+			    install_library_with_deps( ${dep_filename} )
+			endif()
+                    else()
+                        message(STATUS "Skipping already processed ${dep_filename}")
+                    endif()
 		else()
 		    is_system_lib (${dep_filename} sys_lib)
 		    if (sys_lib EQUAL 0)
@@ -235,6 +409,42 @@ macro( files_to_absolute_paths )
         set( PO_SOURCES ${PO_FILES} ${PO_SOURCES} PARENT_SCOPE)
         set( PO_ABS_FILES ${_abs_file} ${PO_ABS_FILES}  )
         set( PO_ABS_SOURCES ${PO_ABS_FILES} ${PO_ABS_SOURCES} PARENT_SCOPE)
+    endforeach()
+endmacro()
+
+#
+# Macro used to turn a list of .cpp/.h files into an absolute path for
+# fluid files, and shortened relative paths for others.
+#
+# @bug: We need to do this on Windows, as xgettext chokes on too many
+#       long paths.
+#
+macro( hdr_files_to_absolute_paths )
+    set( PO_HDR_FILES )
+    set( _exclude_regex "\\.mm" ) # macOS .mm files are not considered
+    set( _no_short_name_regex "\\.cxx" ) # .cxx are fluid generated files
+    set( PO_HDR_ABS_FILES  )
+    foreach( filename ${SOURCES} ${HEADERS} )
+	file(REAL_PATH ${filename} _abs_file )
+	set( _matched )
+	string( REGEX MATCH ${_exclude_regex} _matched ${_abs_file} )
+	if ( _matched )
+            continue()
+	endif()
+	set( _short_name ${_abs_file} )
+	set( _matched )
+	foreach( match ${_no_short_name_regex} )
+	    string( REGEX MATCH ${match} _matched ${_abs_file} )
+	endforeach()
+	if ( NOT _matched )
+	    string( REGEX REPLACE ".*/lib/" "" _short_name ${_abs_file} )
+	endif()
+	set( PO_HDR_FILES ${_short_name} ${PO_HDR_FILES} )
+        set( PO_HDR_SOURCES ${PO_HDR_FILES} ${PO_HDR_SOURCES} PARENT_SCOPE)
+        set( PO_HDR_ABS_FILES ${_abs_file} ${PO_HDR_ABS_FILES}  )
+        set( PO_HDR_ABS_SOURCES
+	    ${PO_HDR_ABS_FILES}
+	    ${PO_HDR_ABS_SOURCES} PARENT_SCOPE)
     endforeach()
 endmacro()
 

@@ -1,5 +1,5 @@
 # data file for the Fltk User Interface Designer (fluid)
-version 1.0400
+version 1.0500
 i18n_type 1
 i18n_include {<libintl.h>}
 i18n_conditional {}
@@ -11,6 +11,9 @@ decl {\#include <FL/fl_ask.H>} {public global
 }
 
 decl {\#include <FL/Fl_Color_Chooser.H>} {public global
+}
+
+decl {\#include <FL/Fl_Scheme_Choice.H>} {public global
 }
 
 decl {\#ifdef TLRENDER_AUDIO} {private local
@@ -89,7 +92,7 @@ class PreferencesUI {open
       label Preferences
       user_data this user_data_type {PreferencesUI*}
       callback {o->hide();} open
-      xywh {106 119 853 467} type Double hide resizable
+      xywh {216 239 853 467} type Double hide resizable
       code0 {main = m;}
     } {
       Fl_Group {} {open
@@ -103,11 +106,11 @@ class PreferencesUI {open
             xywh {283 28 570 380} box PLASTIC_UP_BOX labelcolor 32
           } {
             Fl_Group {} {
-              label {User Interface} open
-              xywh {288 37 555 360} box EMBOSSED_BOX align 5
+              label {User Interface}
+              xywh {288 37 555 360} box EMBOSSED_BOX align 5 hide
             } {
               Fl_Group {} {
-                label {Window Behavior} open selected
+                label {Window Behavior} open
                 xywh {293 61 545 164} box ROUNDED_BOX
               } {
                 Fl_Check_Button uiPrefsAlwaysOnTop {
@@ -125,7 +128,7 @@ If you try to open several mrv2s with different images, all these images will be
                 }
                 Fl_Check_Button uiPrefsAutoFitImage {
                   label {Auto Refit Image}
-                  tooltip {When selected, mrv2 will apply a fit image operation on each video played.  This effectly means the video will be resized automatically based on the size of the window.} xywh {317 161 25 25} box UP_BOX down_box DOWN_BOX value 1 align 8
+                  tooltip {When selected, mrv2 will apply a fit image operation on each video played.  This effectively means the video will be resized automatically based on the size of the window.} xywh {317 161 25 25} box UP_BOX down_box DOWN_BOX value 1 align 8
                 }
                 Fl_Check_Button uiPrefsRaiseOnEnter {
                   label {Raise on Enter}
@@ -436,10 +439,10 @@ If you try to open several mrv2s with different images, all these images will be
                   code0 {auto languages = mrv::getLanguages(); std::string entry;}
                   code1 {for (const auto& language : languages) { entry = _(language.c_str()); entry += " (" + language + ")"; o->add(entry.c_str()); }}
                 } {}
-                Fl_Choice uiScheme {
+                Fl_Choice {} {
                   label Scheme
-                  callback {Fl::scheme( o->mvalue()->text );}
                   xywh {522 131 100 25} down_box BORDER_BOX align 1
+                  class Fl_Scheme_Choice
                 } {
                   MenuItem {} {
                     label base
@@ -481,6 +484,8 @@ Fl::set_color(pen_color, pr, pg, pb);
 Fl::set_color(old_pen_color, opr, opg, opb);
 
 const auto style = mrv::Preferences::schemes.getStyle();
+TimelineClass* t = v->uiTimeWindow;
+t->redraw();
 v->uiTimeline->setStyle(style);
 v->refresh();} open
                   xywh {502 178 150 25} down_box BORDER_BOX align 1
@@ -705,16 +710,16 @@ v->uiWindowYSize->value( v->main->uiMain->h() );}
               }
             }
             Fl_Group {} {
-              label Render open
-              xywh {288 37 555 360} box EMBOSSED_BOX align 5 hide
+              label Render
+              xywh {288 37 555 369} box EMBOSSED_BOX align 5 hide
             } {
               Fl_Group {} {
-                label Render open
-                xywh {301 132 531 170} box ROUNDED_BOX
+                label Render
+                xywh {302 62 531 170} box ROUNDED_BOX
               } {
                 Fl_Choice uiPrefsVideoLevels {
                   label {Video Levels} open
-                  xywh {513 146 135 25} down_box BORDER_BOX
+                  xywh {514 76 135 25} down_box BORDER_BOX
                 } {
                   MenuItem {} {
                     label {From File}
@@ -731,7 +736,7 @@ v->uiWindowYSize->value( v->main->uiMain->h() );}
                 }
                 Fl_Choice uiPrefsAlphaBlend {
                   label {Alpha Blend}
-                  xywh {513 176 135 25} down_box BORDER_BOX
+                  xywh {514 106 135 25} down_box BORDER_BOX
                 } {
                   MenuItem {} {
                     label None
@@ -748,7 +753,7 @@ v->uiWindowYSize->value( v->main->uiMain->h() );}
                 }
                 Fl_Choice uiPrefsMinifyFilter {
                   label {Minify Filter}
-                  xywh {513 229 135 25} down_box BORDER_BOX
+                  xywh {514 159 135 25} down_box BORDER_BOX
                 } {
                   MenuItem {} {
                     label Nearest
@@ -761,7 +766,7 @@ v->uiWindowYSize->value( v->main->uiMain->h() );}
                 }
                 Fl_Choice uiPrefsMagnifyFilter {
                   label {Magnify Filter}
-                  xywh {513 262 135 25} down_box BORDER_BOX
+                  xywh {514 192 135 25} down_box BORDER_BOX
                 } {
                   MenuItem {} {
                     label Nearest
@@ -770,6 +775,86 @@ v->uiWindowYSize->value( v->main->uiMain->h() );}
                   MenuItem {} {
                     label Linear
                     xywh {50 50 100 20}
+                  }
+                }
+              }
+              Fl_Group {} {
+                label HDR
+                xywh {303 256 530 140} box ROUNDED_BOX
+              } {
+                Fl_Choice uiPrefsChromaticities {
+                  label Chromaticities open
+                  xywh {513 275 135 25} down_box BORDER_BOX
+                } {
+                  MenuItem {} {
+                    label Ignore
+                    xywh {20 20 100 20}
+                  }
+                  MenuItem {} {
+                    label Apply
+                    xywh {30 30 100 20}
+                  }
+                }
+                Fl_Choice uiPrefsTonemap {
+                  label Tonemap open
+                  xywh {513 312 135 25} down_box BORDER_BOX
+                } {
+                  MenuItem {} {
+                    label Never
+                    xywh {30 30 100 20}
+                  }
+                  MenuItem {} {
+                    label {From File}
+                    xywh {40 40 100 20}
+                  }
+                }
+                Fl_Choice uiPrefsTonemapAlgorithm {
+                  label {Tonemap Algorithm} open
+                  xywh {513 349 135 25} down_box BORDER_BOX
+                } {
+                  MenuItem {} {
+                    label ST2094_40
+                    xywh {40 40 100 20}
+                  }
+                  MenuItem {} {
+                    label ST2094_10
+                    xywh {50 50 100 20}
+                  }
+                  MenuItem {} {
+                    label Clip
+                    xywh {60 60 100 20}
+                  }
+                  MenuItem {} {
+                    label BT2390
+                    xywh {70 70 100 20}
+                  }
+                  MenuItem {} {
+                    label BT2446A
+                    xywh {80 80 100 20}
+                  }
+                  MenuItem {} {
+                    label Spline
+                    xywh {90 90 100 20}
+                  }
+                  MenuItem {} {
+                    label Reinhard
+                    xywh {100 100 100 20}
+                  }
+                  MenuItem {} {
+                    label Mobius
+                    xywh {110 110 100 20}
+                  }
+                  MenuItem {} {
+                    label Gamma
+                    xywh {120 120 100 20}
+                  }
+                  MenuItem {} {
+                    label Linear
+                    xywh {130 130 100 20}
+                  }
+                  MenuItem {} {
+                    label {Linear Light}
+                    xywh {140 140 100 20}
                   }
                 }
               }
@@ -819,10 +904,10 @@ v->uiWindowYSize->value( v->main->uiMain->h() );}
               xywh {288 37 555 360} box EMBOSSED_BOX align 5 hide
             } {
               Fl_Group {} {
-                label Timeline
+                label Timeline open
                 xywh {325 63 480 316} box ROUNDED_BOX
               } {
-                Fl_Group {} {open
+                Fl_Group {} {
                   xywh {397 145 405 129}
                 } {
                   Fl_Choice uiPrefsTimelineDisplay {
@@ -851,6 +936,10 @@ v->uiWindowYSize->value( v->main->uiMain->h() );}
                     label {Remove EDLs in Temporary Folder on Exit}
                     tooltip {When selected, temporary EDLs (Playlists) will be removed from the temporary folder.} xywh {397 254 370 20} down_box DOWN_BOX value 1
                   }
+                }
+                Fl_Value_Input uiStartTimeOffset {
+                  label {Video Start Frame}
+                  tooltip {Start value in the timeline where video starts.} xywh {525 302 78 29} color 20 minimum -32400 maximum 324000 step 1 textcolor 56
                 }
               }
             }
@@ -1023,7 +1112,7 @@ v->uiPrefsFPS->value( g );}
             }
             Fl_Group {} {
               label OCIO
-              xywh {288 37 555 360} box EMBOSSED_BOX align 5 hide
+              xywh {288 37 555 361} box EMBOSSED_BOX align 5 hide
             } {
               Fl_Group {} {
                 label OCIO open
@@ -1047,11 +1136,11 @@ if (entry == _("Default"))
 }
 else if (entry == _("CG"))
 {
-   v->uiPrefsOCIOConfig->value("ocio://cg-config-v1.0.0_aces-v1.3_ocio-v2.1");
+   v->uiPrefsOCIOConfig->value("ocio://cg-config-latest");
 }
 else if (entry == _("Studio"))
 {
-   v->uiPrefsOCIOConfig->value("ocio://studio-config-v1.0.0_aces-v1.3_ocio-v2.1");
+   v->uiPrefsOCIOConfig->value("ocio://studio-config-latest");
 }}
                   xywh {477 101 119 32} down_box BORDER_BOX when 7
                 } {
@@ -1075,7 +1164,11 @@ else if (entry == _("Studio"))
 std::string r = mrv::open_ocio_config(uiPrefs->uiPrefsOCIOConfig->value());
 if ( r.empty() ) return;
 
+\#ifdef _WIN32
+unsetenv( L"OCIO" );
+\#else
 unsetenv( "OCIO" );
+\#endif
 uiPrefs->uiPrefsOCIOConfig->value( r.c_str() );}
                   tooltip {Pick a config.ocio file from disk.} xywh {751 182 55 31}
                 }
@@ -1245,7 +1338,7 @@ v->uiOCIO_Display_View->do_callback();}
               }
             }
             Fl_Group {} {
-              label Loading open
+              label Loading
               xywh {288 37 555 360} align 5 hide
             } {
               Fl_Group {} {open
@@ -1452,8 +1545,8 @@ v->uiOCIO_Display_View->do_callback();}
                   }
                 }
                 Fl_Choice uiPrefsColorAccuracy {
-                  label {Color Buffers' Accuracy} open
-                  tooltip {Color Buffers can be Float, Half Float, Fast or Automatic.  Float preserves all float information, Half Float preserves most float information and Fast works in 8-bits.  Automatic selects the accuracy baed on image depth.} xywh {511 167 140 25} down_box BORDER_BOX align 132 textcolor 32
+                  label {Color Buffers' Accuracy}
+                  tooltip {Color Buffers can be Float, Half Float, Fast or Automatic.  Float preserves all float information, Half Float preserves most float information and Fast works in 8-bits.  Automatic selects the accuracy based on image depth.} xywh {511 167 140 25} down_box BORDER_BOX align 132 textcolor 32
                   class {mrv::Choice}
                 } {
                   MenuItem {} {
@@ -1474,7 +1567,7 @@ v->uiOCIO_Display_View->do_callback();}
                   }
                 }
                 Fl_Choice uiPrefsBlitViewports {
-                  label {Blit Viewports} open
+                  label {Blit Viewports}
                   tooltip {Viewports can be drawn with blitting or with OpenGL shaders.  Depending on graphics card and OS one can perform better then the other.} xywh {513 243 140 25} down_box BORDER_BOX align 132 textcolor 32
                   class {mrv::Choice}
                 } {
@@ -1628,7 +1721,7 @@ v->uiOCIO_Display_View->do_callback();}
               }
             }
           }
-          Fl_Group {} {open
+          Fl_Group {} {
             xywh {320 412 470 44}
           } {
             Fl_Button {} {
@@ -1663,7 +1756,7 @@ mrv::Preferences::run();}
             }
           }
         }
-        Fl_Group {} {open
+        Fl_Group {} {
           xywh {9 0 270 447} box PLASTIC_UP_BOX
         } {
           Fl_Tree uiPrefsTree {
@@ -1724,7 +1817,8 @@ o->add( _("Audio") );
 o->add( _("ComfyUI") );
 o->add( _("Errors") );
 o->add( _("Behavior") );
-o->select( item );} {}
+o->select( item );} {selected
+    }
   }
   Function {fill_audio_apis(Fl_Choice* o)} {} {
     code {o->clear();

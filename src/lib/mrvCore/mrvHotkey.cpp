@@ -28,6 +28,7 @@ namespace mrv
     Hotkey kSaveImage(false, false, false, false, 0);
     Hotkey kSaveImageToFolder(false, false, false, false, 0);
     Hotkey kSaveSequence(true, false, false, true, 's');
+    Hotkey kSaveAudio(false, false, false, false, 0);
     Hotkey kSaveAnnotationsOnly(false, false, false, false, 0);
     Hotkey kSaveAnnotationsAsJson(false, false, false, false, 0);
     Hotkey kSaveOTIOEDL(false, false, false, false, 0);
@@ -46,7 +47,7 @@ namespace mrv
     Hotkey kZoomIn(false, false, false, false, 0);
     Hotkey kZoomOut(false, false, false, false, 0);
     Hotkey kFullScreen(false, false, false, false, FL_F + 11);
-    Hotkey kToggleFloatOnTop(false, false, false, false, 0);
+    Hotkey kToggleFloatOnTop(true, false, false, false, 'w');
     Hotkey kToggleSecondary(false, false, false, false, 0);
     Hotkey kToggleSecondaryFloatOnTop(false, false, false, false, 0);
 
@@ -64,12 +65,15 @@ namespace mrv
     Hotkey kFrameView(false, false, false, false, 0);
     Hotkey kSafeAreas(false, false, false, false, 's');
     Hotkey kIgnoreDisplayWindow(false, false, false, false, 0);
+    Hotkey kIgnoreChromaticities(false, false, false, false, 0);
     Hotkey kAutoNormalize(false, false, false, false, 0);
     Hotkey kInvalidValues(false, false, false, false, 0);
+    Hotkey kToggleHDRTonemap(false, false, false, false, 0);
 
     Hotkey kDisplayWindow(true, false, false, false, 'd');
     Hotkey kDataWindow(false, false, false, false, 'd');
 
+    Hotkey kCompareNone(false, false, false, false, 0);
     Hotkey kCompareWipe(false, false, true, false, 'w');
     Hotkey kCompareOverlay(false, false, false, false, 0);
     Hotkey kCompareDifference(false, false, false, false, 0);
@@ -164,13 +168,13 @@ namespace mrv
     Hotkey kSwitchPenColor(false, false, false, false, 0);
 
     Hotkey kResetChanges(true, false, false, false, 'r');
-    
+
     Hotkey kExposureMore(false, false, false, false, '.');
     Hotkey kExposureLess(false, false, false, false, ',');
-    
+
     Hotkey kSaturationMore(false, false, false, false, 0, ">");
     Hotkey kSaturationLess(false, false, false, false, 0, "<");
-    
+
     Hotkey kGammaMore(false, false, false, false, 0, ")");
     Hotkey kGammaLess(false, false, false, false, 0, "(");
 
@@ -179,10 +183,11 @@ namespace mrv
 
     Hotkey kSetInPoint(false, false, false, false, 'i');
     Hotkey kSetOutPoint(false, false, false, false, 'o');
+    Hotkey kToggleOtioClipInOut(false, false, false, false, 'm');
 
     Hotkey kGridToggle(true, false, false, false, 'g');
     Hotkey kGridSize(true, true, false, false, 'g');
-    
+
     Hotkey kHudToggle(true, false, false, false, 'h');
 
     Hotkey kOCIOPresetsToggle(false, false, false, false, 0);
@@ -190,6 +195,7 @@ namespace mrv
     Hotkey kOCIOInputColorSpace(false, false, false, false, 0);
     Hotkey kOCIODisplay(false, false, false, false, 0);
     Hotkey kOCIOView(false, false, false, false, 0);
+    Hotkey kOCIOToggle(false, false, true, false, 'p');
 
     Hotkey kToggleReel(false, false, false, false, FL_F + 4);
     Hotkey kToggleMediaInfo(false, false, false, false, FL_F + 5);
@@ -217,6 +223,13 @@ namespace mrv
     Hotkey kToggleTimelineThumbnails(false, false, false, false, 0);
     Hotkey kToggleTimelineTransitions(false, false, false, false, 0);
     Hotkey kToggleTimelineMarkers(false, false, false, false, 0);
+
+    // Hotkey to allow mouse click handling to pass through the FLTK window to
+    // the OS windows behind it.
+    Hotkey kToggleClickThrough(true, false, false, false, 't');
+
+    Hotkey kUITransparencyMore(true, false, false, false, '.');
+    Hotkey kUITransparencyLess(true, false, false, false, ',');
 
     Hotkey kToggleTimelineEditable(false, false, false, false, 0);
     Hotkey kToggleEditAssociatedClips(false, false, false, false, 0);
@@ -367,6 +380,7 @@ namespace mrv
         HotkeyEntry(_("Open Single Image"), &kOpenSingleImage),
         HotkeyEntry(_("Open Session"), &kOpenSession),
         HotkeyEntry(_("Save Image"), &kSaveImage),
+        HotkeyEntry(_("Save Audio"), &kSaveAudio),
         HotkeyEntry(_("Save Frames To Folder"), &kSaveImageToFolder),
 
         HotkeyEntry(_("Save Movie or Sequence"), &kSaveSequence),
@@ -394,12 +408,18 @@ namespace mrv
         HotkeyEntry(
             _("Toggle Magnify Texture Filtering"), &kMagnifyTextureFiltering),
         HotkeyEntry(_("Auto Frame View"), &kFrameView),
+        HotkeyEntry(_("Toggle Click Through"), &kToggleClickThrough),
+        HotkeyEntry(_("More UI Transparency"), &kUITransparencyMore),
+        HotkeyEntry(_("Less UI Transparency"), &kUITransparencyLess),
         HotkeyEntry(_("Safe Areas"), &kSafeAreas),
         HotkeyEntry(_("Ignore Display Window"), &kIgnoreDisplayWindow),
+        HotkeyEntry(_("Ignore Chromaticities"), &kIgnoreChromaticities),
         HotkeyEntry(_("Auto Normalize"), &kAutoNormalize),
         HotkeyEntry(_("Invalid Values"), &kInvalidValues),
+        HotkeyEntry(_("Toggle HDR tonemap"), &kToggleHDRTonemap),
         HotkeyEntry(_("Display Window"), &kDisplayWindow),
         HotkeyEntry(_("Data Window"), &kDataWindow),
+        HotkeyEntry(_("Compare None"), &kCompareNone),
         HotkeyEntry(_("Compare Wipe"), &kCompareWipe),
         HotkeyEntry(_("Compare Overlay"), &kCompareOverlay),
         HotkeyEntry(_("Compare Difference"), &kCompareDifference),
@@ -429,6 +449,7 @@ namespace mrv
         HotkeyEntry(_("Annotation Clear Frame"), &kShapeFrameClear),
         HotkeyEntry(_("Annotation Clear All Frames"), &kShapeFrameClearAll),
         HotkeyEntry(_("Annotation Frame Step Backwards"), &kShapeFrameStepBack),
+        HotkeyEntry(_("Toggle Show Annotations"), &kToggleShowAnnotations),
 
         HotkeyEntry(_("Frame Step Backwards"), &kFrameStepBack),
         HotkeyEntry(_("Frame Step FPS Backwards"), &kFrameStepFPSBack),
@@ -466,7 +487,7 @@ namespace mrv
         HotkeyEntry(_("Next Channel"), &kNextChannel),
 
         HotkeyEntry(_("Clear Cache"), &kClearCache),
-        HotkeyEntry(_("UpdateVideoFrame"), &kUpdateVideoFrame),
+        HotkeyEntry(_("Update Video Frame"), &kUpdateVideoFrame),
 
         HotkeyEntry(_("Cut Frame"), &kEditCutFrame),
         HotkeyEntry(_("Copy Frame"), &kEditCopyFrame),
@@ -522,11 +543,13 @@ namespace mrv
         HotkeyEntry(_("Saturation Less"), &kSaturationLess),
         HotkeyEntry(_("Gamma More"), &kGammaMore),
         HotkeyEntry(_("Gamma Less"), &kGammaLess),
+
         HotkeyEntry(_("OCIO Presets"), &kOCIOPresetsToggle),
         HotkeyEntry(_("OCIO In Top Bar"), &kOCIOInTopBarToggle),
         HotkeyEntry(_("OCIO Input Color Space"), &kOCIOInputColorSpace),
         HotkeyEntry(_("OCIO Display"), &kOCIODisplay),
         HotkeyEntry(_("OCIO View"), &kOCIOView),
+        HotkeyEntry(_("OCIO Toggle"), &kOCIOToggle),
 
         HotkeyEntry(_("Scrub Mode"), &kScrubMode),
         HotkeyEntry(_("Area Selection Mode"), &kAreaMode),
@@ -577,18 +600,15 @@ namespace mrv
     {
         std::string r;
         if (ctrl)
-            r += "Ctrl+";
+            r += "<Ctrl>";
         if (alt)
-            r += "Alt+";
+            r += "<Alt>";
         if (meta)
-            r += "Meta+";
+            r += "<Meta>";
         if (shift)
-            r += "Shift+";
+            r += "<Shift>";
 
         unsigned k = key;
-        if (k == 0 && (ctrl || alt || meta || shift))
-            r = r.substr(0, r.size() - 1);
-
         bool special = false;
         for (unsigned j = 0; j < sizeof(table) / sizeof(TableText); ++j)
         {

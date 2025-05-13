@@ -282,7 +282,7 @@ namespace mrv
     void goto_file_cb(Fl_Widget* w, void* data)
     {
         ViewerUI* ui = App::ui;
-        size_t Aindex = (size_t) data;
+        size_t Aindex = (size_t)data;
         auto model = App::app->filesModel();
         auto numFiles = model->observeFiles()->getSize();
         if (Aindex < 0 || Aindex >= numFiles)
@@ -294,12 +294,12 @@ namespace mrv
     void select_Bfile_cb(Fl_Widget* w, void* data)
     {
         ViewerUI* ui = App::ui;
-        size_t Bindex = (size_t) data;
+        size_t Bindex = (size_t)data;
         auto model = App::app->filesModel();
         auto numFiles = model->observeFiles()->getSize();
         if (Bindex < 0 || Bindex >= numFiles)
             return;
-        
+
         const auto bIndexes = model->observeBIndexes()->get();
         const auto i = std::find(bIndexes.begin(), bIndexes.end(), Bindex);
         model->setB(Bindex, i == bIndexes.end());
@@ -312,10 +312,10 @@ namespace mrv
         auto o = model->observeCompareOptions()->get();
         o.mode = timeline::CompareMode::A;
         model->setCompareOptions(o);
-                    
+
         ui->uiMain->fill_menu(ui->uiMenuBar);
     }
-    
+
     void compare_b_cb(Fl_Widget* w, ViewerUI* ui)
     {
         auto model = App::app->filesModel();
@@ -351,7 +351,7 @@ namespace mrv
         model->setCompareOptions(o);
         ui->uiMain->fill_menu(ui->uiMenuBar);
     }
-    
+
     void compare_horizontal_cb(Fl_Widget* w, ViewerUI* ui)
     {
         auto model = App::app->filesModel();
@@ -360,7 +360,7 @@ namespace mrv
         model->setCompareOptions(o);
         ui->uiMain->fill_menu(ui->uiMenuBar);
     }
-    
+
     void compare_vertical_cb(Fl_Widget* w, ViewerUI* ui)
     {
         auto model = App::app->filesModel();
@@ -369,7 +369,7 @@ namespace mrv
         model->setCompareOptions(o);
         ui->uiMain->fill_menu(ui->uiMenuBar);
     }
-    
+
     void compare_tile_cb(Fl_Widget* w, ViewerUI* ui)
     {
         auto model = App::app->filesModel();
@@ -378,7 +378,7 @@ namespace mrv
         model->setCompareOptions(o);
         ui->uiMain->fill_menu(ui->uiMenuBar);
     }
-    
+
     static std::string lastSavedFile;
     static mrv::SaveOptions lastSavedOptions;
 
@@ -388,8 +388,7 @@ namespace mrv
         auto Afile = model->observeA()->get();
         if (!Afile)
             return;
-        
-        
+
         const std::string& file = save_single_image(Afile->path.get().c_str());
         if (file.empty())
             return;
@@ -426,13 +425,12 @@ namespace mrv
         value = saveOptions.PixelType->value();
         if (value == 0)
             options.exrPixelType = tl::image::PixelType::RGBA_F16;
-        if (value == 1)
+        else if (value == 1)
             options.exrPixelType = tl::image::PixelType::RGBA_F32;
-#endif
-
-#ifdef TLRENDER_EXR
         value = saveOptions.Compression->value();
-        options.exrCompression = static_cast<tl::exr::Compression>(value);
+        options.exrCompression = static_cast<Imf::Compression>(value);
+        value = saveOptions.Contents->value();
+        options.exrSaveContents = static_cast<mrv::SaveContents>(value);
         options.zipCompressionLevel =
             static_cast<int>(saveOptions.ZipCompressionLevel->value());
         options.dwaCompressionLevel = saveOptions.DWACompressionLevel->value();
@@ -470,6 +468,53 @@ namespace mrv
         save_single_frame(file, ui, lastSavedOptions);
     }
 
+    void save_audio_cb(Fl_Menu_* w, ViewerUI* ui)
+    {
+        auto player = ui->uiView->getTimelinePlayer();
+        if (!player)
+            return;
+
+        const auto& ioInfo = player->ioInfo();
+        if (!ioInfo.audio.isValid())
+            return;
+
+        std::string file = save_audio_file();
+        if (file.empty())
+            return;
+
+        std::string extension = tl::file::Path(file).getExtension();
+        extension = string::toLower(extension);
+        if (!file::isAudio(extension))
+        {
+            LOG_ERROR(_("Saving audio but not with an audio extension."));
+            return;
+        }
+
+        mrv::SaveOptions options;
+        bool hasAudio = true;
+        bool hasVideo = false;
+        bool audioOnly = true;
+
+#ifdef TLRENDER_FFMPEG
+        SaveMovieOptionsUI saveOptions(hasAudio, audioOnly);
+        if (saveOptions.cancel)
+            return;
+
+        options.video = options.saveVideo = false;
+        int value = saveOptions.AudioCodec->value();
+        options.ffmpegAudioCodec = static_cast<tl::ffmpeg::AudioCodec>(value);
+#endif
+
+        try
+        {
+            save_movie(file, ui, options);
+        }
+        catch (const std::exception& e)
+        {
+            LOG_ERROR(e.what());
+        }
+    }
+
     void save_movie_cb(Fl_Menu_* w, ViewerUI* ui)
     {
 
@@ -487,7 +532,7 @@ namespace mrv
             file = save_movie_or_sequence_file();
         if (file.empty())
             return;
-        
+
         std::string extension = tl::file::Path(file).getExtension();
         extension = string::toLower(extension);
         if (extension.empty())
@@ -503,6 +548,7 @@ namespace mrv
         }
 
         mrv::SaveOptions options;
+        bool annotations_frames_only = false;
 
 #ifdef TLRENDER_FFMPEG
         if (file::isMovie(extension) || file::isAudio(extension))
@@ -628,6 +674,8 @@ namespace mrv
 
             options.annotations =
                 static_cast<bool>(saveOptions.Annotations->value());
+            annotations_frames_only =
+                static_cast<bool>(saveOptions.AnnotationFramesOnly->value());
 
             int value;
 
@@ -639,7 +687,7 @@ namespace mrv
                 options.exrPixelType = tl::image::PixelType::RGBA_F32;
 
             value = saveOptions.Compression->value();
-            options.exrCompression = static_cast<tl::exr::Compression>(value);
+            options.exrCompression = static_cast<Imf::Compression>(value);
 
             options.zipCompressionLevel =
                 static_cast<int>(saveOptions.ZipCompressionLevel->value());
@@ -648,7 +696,22 @@ namespace mrv
 #endif
         }
 
-        save_movie(file, ui, options);
+        if (annotations_frames_only)
+        {
+            auto times = player->getAnnotationTimes();
+            save_multiple_frames(file, times, ui, options);
+        }
+        else
+        {
+            try
+            {
+                save_movie(file, ui, options);
+            }
+            catch (const std::exception& e)
+            {
+                LOG_ERROR(e.what());
+            }
+        }
     }
 
     void save_pdf_cb(Fl_Menu_* w, ViewerUI* ui)
@@ -678,7 +741,7 @@ namespace mrv
             return;
 
         const auto& ioInfo = player->ioInfo();
-        
+
         const auto& annotations = player->getAllAnnotations();
         if (annotations.empty())
             return;
@@ -697,11 +760,12 @@ namespace mrv
 
         if (extension == ".otio")
         {
-            save_timeline_to_disk(file);
+            LOG_ERROR(_("Cannot save annotations to .otio file"));
             return;
         }
 
         mrv::SaveOptions options;
+        bool annotations_frames_only = false;
 
 #ifdef TLRENDER_FFMPEG
         if (file::isMovie(extension) || file::isAudio(extension))
@@ -827,6 +891,8 @@ namespace mrv
 
             options.annotations =
                 static_cast<bool>(saveOptions.Annotations->value());
+            annotations_frames_only =
+                static_cast<bool>(saveOptions.AnnotationFramesOnly->value());
 
             int value;
 
@@ -838,7 +904,7 @@ namespace mrv
                 options.exrPixelType = tl::image::PixelType::RGBA_F32;
 
             value = saveOptions.Compression->value();
-            options.exrCompression = static_cast<tl::exr::Compression>(value);
+            options.exrCompression = static_cast<Imf::Compression>(value);
 
             options.zipCompressionLevel =
                 static_cast<int>(saveOptions.ZipCompressionLevel->value());
@@ -849,10 +915,24 @@ namespace mrv
 
         options.annotations = true;
         options.video = false;
-            
-        save_movie(file, ui, options);
-    }
 
+        if (annotations_frames_only)
+        {
+            auto times = player->getAnnotationTimes();
+            save_multiple_annotation_frames(file, times, ui, options);
+        }
+        else
+        {
+            try
+            {
+                save_movie(file, ui, options);
+            }
+            catch (const std::exception& e)
+            {
+                LOG_ERROR(e.what());
+            }
+        }
+    }
 
     void save_annotations_as_json_cb(Fl_Menu_* w, ViewerUI* ui)
     {
@@ -871,7 +951,7 @@ namespace mrv
 
         Message j;
         j["render_size"] = view->getRenderSize();
-        
+
         std::vector< draw::Annotation > flatAnnotations;
         for (const auto& annotation : annotations)
         {
@@ -883,7 +963,6 @@ namespace mrv
         f << j;
     }
 
-    
     void close_current_cb(Fl_Widget* w, ViewerUI* ui)
     {
         // Must come before model->close().
@@ -1004,7 +1083,7 @@ namespace mrv
 #endif
 
         // Close all files
-        // close_all_cb(w, ui);  // takes too long to exit .ndi files
+        close_all_cb(w, ui);
 
         // Hide any GL Window (needed in Windows)
         Fl_Window* pw = Fl::first_window();
@@ -1161,7 +1240,7 @@ namespace mrv
         const timeline::Channels channel = timeline::Channels::Alpha;
         toggle_channel(ui, channel);
     }
-    
+
     void toggle_lumma_channel_cb(Fl_Menu_* w, ViewerUI* ui)
     {
         const timeline::Channels channel = timeline::Channels::Lumma;
@@ -1177,7 +1256,16 @@ namespace mrv
     void toggle_normalize_image_cb(Fl_Menu_* m, ViewerUI* ui)
     {
         timeline::DisplayOptions o = ui->app->displayOptions();
-        o.normalize.enabled ^= 1;
+        o.normalize.enabled = !o.normalize.enabled;
+        ui->app->setDisplayOptions(o);
+        refresh_media_cb(m, ui);
+        ui->uiMain->fill_menu(ui->uiMenuBar);
+    }
+
+    void toggle_ignore_chromaticities_cb(Fl_Menu_* m, ViewerUI* ui)
+    {
+        timeline::DisplayOptions o = ui->app->displayOptions();
+        o.ignoreChromaticities = !o.ignoreChromaticities;
         ui->app->setDisplayOptions(o);
         refresh_media_cb(m, ui);
         ui->uiMain->fill_menu(ui->uiMenuBar);
@@ -1189,6 +1277,33 @@ namespace mrv
         o.invalidValues ^= 1;
         ui->app->setDisplayOptions(o);
         refresh_media_cb(m, ui);
+        ui->uiMain->fill_menu(ui->uiMenuBar);
+    }
+
+    void toggle_hdr_tonemap_cb(Fl_Menu_* w, ViewerUI* ui)
+    {
+        timeline::HDROptions o = ui->uiView->getHDROptions();
+        o.tonemap ^= 1;
+        ui->uiView->setHDROptions(o);
+        ui->uiMain->fill_menu(ui->uiMenuBar);
+    }
+
+    void select_hdr_tonemap_cb(Fl_Menu_* m, ViewerUI* ui)
+    {
+        const Fl_Menu_Item* item = m->mvalue();
+        const std::string algorithm = item->label();
+
+        int idx = 0;
+        for (const auto& entry : timeline::getHDRTonemapAlgorithmLabels())
+        {
+            if (entry == algorithm)
+                break;
+            ++idx;
+        }
+
+        timeline::HDROptions o = ui->uiView->getHDROptions();
+        o.algorithm = static_cast<timeline::HDRTonemapAlgorithm>(idx);
+        ui->uiView->setHDROptions(o);
         ui->uiMain->fill_menu(ui->uiMenuBar);
     }
 
@@ -1289,6 +1404,7 @@ namespace mrv
             window->always_on_top(value);
 
             view->frameView();
+            view->redraw();
         }
         ui->uiMain->fill_menu(ui->uiMenuBar);
     }
@@ -1307,6 +1423,26 @@ namespace mrv
             active = false;
         ui->uiSecondary->window()->always_on_top(active);
         ui->uiMain->fill_menu(ui->uiMenuBar);
+    }
+
+    void toggle_click_through(Fl_Menu_* w, ViewerUI* ui)
+    {
+        bool value = !ui->uiMain->get_click_through();
+        ui->uiMain->set_click_through(value);
+    }
+
+    void more_ui_transparency(Fl_Menu_* w, ViewerUI* ui)
+    {
+        int alpha = ui->uiMain->get_alpha();
+        alpha -= 5;
+        ui->uiMain->set_alpha(alpha);
+    }
+
+    void less_ui_transparency(Fl_Menu_* w, ViewerUI* ui)
+    {
+        int alpha = ui->uiMain->get_alpha();
+        alpha += 5;
+        ui->uiMain->set_alpha(alpha);
     }
 
     void toggle_one_panel_only_cb(Fl_Menu_* w, ViewerUI* ui)
@@ -1625,6 +1761,8 @@ namespace mrv
         if (has_about_window)
             ui->uiAbout->uiMain->show();
 
+        ui->uiView->frameView();
+
         PanelGroup::show_all();
     }
 
@@ -1787,6 +1925,14 @@ namespace mrv
             Fl_Group::current(view);
             OCIOPresetsClass = new OCIOPresetsUI();
         }
+        ui->uiMain->fill_menu(ui->uiMenuBar);
+    }
+
+    void toggle_ocio_cb(Fl_Menu_* m, ViewerUI* ui)
+    {
+        timeline::OCIOOptions options = ui->uiView->getOCIOOptions();
+        options.enabled = !options.enabled;
+        ui->uiView->setOCIOOptions(options);
         ui->uiMain->fill_menu(ui->uiMenuBar);
     }
 
@@ -1984,6 +2130,45 @@ namespace mrv
         ui->uiView->framePrev();
     }
 
+    void toggle_otio_clip_in_out_cb(Fl_Menu_*, ViewerUI* ui)
+    {
+        auto player = ui->uiView->getTimelinePlayer();
+        if (!player)
+            return;
+
+        const auto time = player->currentTime();
+        const auto timeline = player->getTimeline();
+        const auto tracks = timeline->video_tracks();
+        const auto track = tracks[0];
+
+        const auto item =
+            otio::dynamic_retainer_cast<otio::Item>(track->child_at_time(time));
+        if (!item)
+            return;
+
+        const auto& fullRange = player->timeRange();
+        const auto& inOutRange = player->inOutRange();
+        auto range = item->trimmed_range_in_parent().value();
+        if (range == inOutRange)
+        {
+            range = fullRange;
+        }
+
+        auto rate = track->trimmed_range().end_time_exclusive().rate();
+        range = otime::TimeRange::range_from_start_end_time(
+            range.start_time().rescaled_to(rate).round(),
+            range.end_time_exclusive().rescaled_to(rate).round());
+        player->setInOutRange(range);
+
+        TimelineClass* c = ui->uiTimeWindow;
+        c->uiStartButton->value(!c->uiStartButton->value());
+        c->uiEndButton->value(!c->uiEndButton->value());
+        c->uiStartFrame->setTime(range.start_time());
+        c->uiEndFrame->setTime(range.end_time_exclusive());
+
+        ui->uiTimeline->redraw();
+    }
+
     void next_clip_cb(Fl_Menu_*, ViewerUI* ui)
     {
         auto player = ui->uiView->getTimelinePlayer();
@@ -2060,6 +2245,12 @@ namespace mrv
                 return;
             }
         }
+        // If no next annotation was found, look to the first annotation
+        if (!times.empty())
+        {
+            view->stop();
+            player->seek(times[0]);
+        }
     }
 
     void next_annotation_cb(Fl_Menu_*, ViewerUI* ui)
@@ -2081,6 +2272,20 @@ namespace mrv
                 return;
             }
         }
+        // If no next annotation was found, look to the first annotation
+        if (!times.empty())
+        {
+            view->stop();
+            player->seek(times[0]);
+        }
+    }
+
+    void toggle_visible_annotation_cb(Fl_Menu_* m, ViewerUI* ui)
+    {
+        bool value = !ui->uiView->getShowAnnotations();
+        ui->uiView->setShowAnnotations(value);
+        ui->uiView->redrawWindows();
+        ui->uiMain->fill_menu(ui->uiMenuBar);
     }
 
     void annotation_clear_cb(Fl_Menu_*, ViewerUI* ui)
@@ -2224,6 +2429,22 @@ namespace mrv
         ui->uiTimeline->setDisplayOptions(options);
         if (editMode != EditMode::kTimeline)
             set_edit_mode_cb(EditMode::kFull, ui);
+        ui->uiMain->fill_menu(ui->uiMenuBar);
+    }
+
+    void toggle_timeline_active_track_cb(Fl_Menu_* m, ViewerUI* ui)
+    {
+        Fl_Menu_Item* item = const_cast< Fl_Menu_Item* >(m->mvalue());
+        std::string track = item->label();
+
+        size_t startIndex = track.find("#");
+        if (startIndex == std::string::npos)
+            return;
+
+        size_t endIndex = track.find("-");
+        size_t len = endIndex - startIndex - 2;
+        unsigned trackIndex = std::stoul(track.substr(startIndex + 1, len)) - 1;
+        toggleTrack(trackIndex, ui);
         ui->uiMain->fill_menu(ui->uiMenuBar);
     }
 
@@ -2382,7 +2603,7 @@ namespace mrv
     }
 
     static void image_version_cb(
-        const ViewerUI* ui, const int sum, const bool first_or_last = false)
+        ViewerUI* ui, const int sum, const bool first_or_last = false)
     {
         auto player = ui->uiView->getTimelinePlayer();
         if (!player)
@@ -2401,9 +2622,26 @@ namespace mrv
         auto Aindex = model->observeAIndex()->get();
         const auto& media = files->getItem(Aindex);
 
+        tl::file::Path otioPath = media->path;
+        auto clipPath = media->path;
+        if (string::compare(
+                otioPath.getExtension(), ".otio",
+                string::Compare::CaseInsensitive))
+        {
+            const auto& tags = ui->uiView->getTags();
+            auto i = tags.find("otioClipName");
+            if (i != tags.end())
+            {
+                clipPath = tl::file::Path(i->second);
+            }
+        }
+
         const std::string& fileName =
-            media_version(ui, media->path, sum, first_or_last);
+            media_version(ui, clipPath, sum, first_or_last, otioPath);
         if (fileName.empty())
+            return;
+
+        if (otioPath != clipPath)
             return;
 
         auto item = std::make_shared<FilesModelItem>();

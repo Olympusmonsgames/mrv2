@@ -1,3 +1,283 @@
+v1.3.7
+======
+
+- Fixed Ghost Previous and Ghost Next not being in sync on the Secondary viewport.
+- Made stepping with Next Annotation and Previous Annotation loop once they reach the final and first annotation respectively.
+- Fixed opening Secondary Window not displaying the video when the video was stopped.
+- Fixed Render->Minify Filter and Render->Magnify Filter toggling from the menu entries (Shift + F was working fine).
+- Fixed Render->Minify and Magnify filter toggling.
+- Fixed Render->Minify and Magnify saving in preferences.
+- Added full support for Japanese language in the UI.
+- Fixed some warnings when starting mrv2 with PYTHONHOME set on Linux.
+- Removed the "export FLTK_BACKEND=x11" line as Wayland now is mature enough.
+- Fixed tonemapping not turning off when switching from an HDR movie to aces SDR one.
+- Fixed playing movies that have frames of 0 duration.
+- Added Preferences->Render->HDR to control chromaticities and tonemapping.
+- Fixed tags not getting saved when using save image or save movie.
+- Made OpenEXRs keep the Data Window and Display Window when saving.
+- Fixed OpenEXR saving when channel count was different than 4.
+- Added the option in the Save Image Options for OpenEXR to allow saving the Data Window or flatten the image to save the full Display Window.
+- Updated build to work with CMake 4.0.
+- Added Playback->Annotation->Toggle Visible to toggle on or off the annotation without deleting them.
+- Fixed a crash when saving a movie file and the container did not support it and the file was already present.
+- Removed non-existant YUV440" pixel format from VP9.
+- Revamped macOS install to support installing multiple applications.
+- Updated ZLIB to v1.3.1.
+- Made PNG link statically to avoid macOS issues.
+- Updated Poco to 1.14.1.
+- Added hotkey to toggle OCIO on and off.  By default, it is Alt + p (mnemonic pass through).
+- Added hotkey entry for Compare None.  It was already present, but missing from Hotkey listing.  It is not set to any hotkey by default.
+- Added a (currently in beta) hdr tool, to show the content of mrv2's viewport in full HDR (High Dynammic Range) by using the NDI Output's Best Format.  The way it works is that you stream your video through mrv2's NDI output and watch it in the hdr tool which works with Vulkan.  It is primarily made to wotk locally, albeit it can also work across the network.  NOTE: it has been tested only on masOS Intel and it is currently not available on macOS arm64.  LIMITATIONS:  it works well for FullHD content albeit 4K content tends to lag and it is mostly useful for single frames.
+- Fixed the Windows uninstaller not deleting the hard-links it created.
+- Added support for writing out DNxHD and DNxHR (needs documenting, but they are similar to ProRes). 
+
+  
+v1.3.6
+======
+
+- Fixed a serious OpenEXR crash on multipart files.
+- Dramatically improved NDI input stream playback performance.  If playing with no audio, it is immediate.  If playing with audio, it will play with a 4 seconds delay.
+- Fixed a hanging when playing NDI with audio.
+- Fixed a zombie process when playing NDI upon program exit.
+- Fixed locale (Internationalization) issues on Windows, which would make it impossible to switch to a different language if your Windows was not set up as English.
+- Revamped locale on start up the first time you install mrv2 (or remove the preferences) on Windows and macOS to start with the System's locale.
+- Moved building of dav1d, lcms2, vpx and SvtAV1 on Windows to the tlRender repository to avoid dealing with shell scripts.  This makes the build on Windows faster too and consistant on all platforms.
+- Ported stack trace in debug and reldeb builds to use cpptrace on Windows and Linux.  The advantage is that it can give us stack traces of threads other than the main one.  Not as good as the traces of macOS, but it is a start.
+- Fixed installation of NDI Advanced DLL being with the wrong name.
+- Fixed builds when not building Python.
+- Made building faster by using NPROCS.
+- Made building faster by removing tlRender libraries we don't use, as Darby's code is diverging from the one used in mrv2.
+- Fixed several locale issues.
+- Fixed problem on Windows making the executable not run.
+- Fixed command-line arguments not showing up when the application was used
+  from Powershell or cmd.exe.
+- Fixed python's cmd.getLanguage() call potentially crashing.  This would make
+  the update-mrv2.py plugin fail.
+- Fixed Window's _wexecv call with CreateProcessW to attach stderr/stdout
+properly.
+- Fixed Window's set_fonts() returning font names longer than 32 characters leading to problems of some users starting the program.
+
+
+v1.3.5
+======
+
+- Updated to NDI's Advanced SDK.  The only limitation is that you can only stream content for a max. of 30 mins.  Note that NDI is currently not available on macOS arm64.
+- Updated documentation to follow the NDI guidelines.
+
+v1.3.4
+======
+
+- Updated default OpenColorIO configs to use their latest names instead of the versioned ones.
+- Fixed disting libselinux on Linux.
+- Added Ignore Chromaticities in Render/HDR menu.
+- Fixed -v flag being used in -logLevel as well as version.  For backwards compatibility -v will refer to -version and -l to -logLevel.
+- Added NDI Video Output to non-beta builds.
+- Added NDI Audio Output to non-beta builds.
+- Added NDI's HDR support to non-beta builds.  Albeit it is untested as I don't
+  have an HDR monitor for it.  However HDR metadata is tonemapped correctly.
+- Refactored Darby's broken BMD code to make it more generic to different devices.
+- Refactored Background options to be controlled from MainControl.
+- Major code clean up of audio code.
+- Fixed antialiasing of text menus on Wayland.
+- Fixed transparency on Wayland to be like X11.
+- Fixed a Wayland crash when changing the scaling factor interactively from FLTK's <Ctrl>+ and <Ctrl>- shortcuts.
+- Fixed a precision problem when drawing Text as an annotation.
+- Fixed an issue with a bad optimization of annotations.
+- Minor optimization of annotations drawing.
+- Added annotations support to NDI video output.  The only thing that does not work yet is text annotations.
+- Added NDI panels saving to sessions file.
+- Made text annotations for NDI work on all platforms.
+- Fixed annotations when set to all frames.
+- Improved performance of annotations drawing.
+- Made session files store the frame view, view position and view zoom settings.
+- Fixed resizeWindow button not working any more as it should.
+- Fixed a number of buggy OpenGL that were mostly responsible for mrv2's bad
+  behavior under Wayland with NVidia graphics cards.
+- NDI libraries can be loaded on demand instead of being shipped with mrv2.  However, Vizr is not shipping .h files compatible with NDI SDK 6.
+- Made NDI sources be detected more cleanly by using Darby's observer class (observer pattern).
+- Windows installer now opens the Firewall for mrv2 (and the version will show
+  in the list of Firewall applications).
+- Fixed a zombie process sometimes appearing when playing NDI.
+- Improved log reporting by using TABs instead of spaces.
+- Added support for HDR metadata for NDI Input reader.  Needs NDI's Advanced SDK.
+- Sped up annotations drawing.
+- Fixed a problem with annotations being kept with a slow macOS Intel.
+- Added all tonemapping algorithms that libplacebo supports.  They are listed
+  under Render/HDR/Tonemap.
+- Fixed a potential installation issue on Windows.
+- Updated to NDI 6.1.1.
+- Fixed some potential libraries incompatibilities on macOS.
+
+
+v1.3.3
+======
+
+- Fixed AC3 bitrate (saving audio using the AC3 codec).
+- Improved saving audio bitrates for all formats.
+- Fixed the sourceforge_defaults.sh script to work on all platforms.
+- Fixed some potential rounding errors on saving frames or movies with
+  annotations.
+- Minor UI improvement.  Added small space between Gain/Saturation/Gamma
+  sliders.
+- Added upcoming (not yet released) HT256 OpenEXR compressor.
+- Fixed update-mrv2.py script typo which would not allow updating mrv2.
+- Updated OCIO default configs to v2.2 ones.  They are still based on ACES 1.3 though, as ACES 2 ones have yet to be released.
+- Changed tlRender's use of exr::Compression to Imf::Compression to support current and future OpenEXR compressors.
+- Changed SaveImageOptionsUI to use Imf::getCompressionNameFromId().
+- Updated Python code to also use Imf::Compression instead of exr::Compression.
+- Removed internal otioClipName and otioClipTime attributes from metadata.
+- Added Annotation Frames Only to Save Image Options to save only the frames
+  that have annotations when saving either annotations only or sequences with
+  annotations.
+- Added new Python command: cmd.saveMultipleAnnotationFrames() to save multiple
+  annotation frames with either video or without video.
+- Removed trailing newline from desktop information on status bar present on
+Rocky Linux's **XDG_SESSION_TYPE** environment variable.
+- Changed mrvTimelineViewport's resizeWindow() to use maximize() when the image will not fit on the screen.  This seems to fix some Wayland NVidia OpenGL issues.
+- Made "Invalid EDID data" not appear when running under XWayland.
+- Fixed Play buttons sometimes appearing in the middle of the viewport under
+  Wayland.
+- Made macOS OpenGL captures (Save Images/Movies with Annotations) use RGBA.
+- Fixed macOS OpenGL captures with annotations reporting window is not in full screen when saving a single frame.
+- Fixed resizing of main window under Wayland by using maximize instead of resize.
+- Fixed resizing of main window when dealing with two monitors under X11.
+- Added hotkeys to control the User Interface's transparency under Windows,
+  macOS and Linux.  By default, they are assigned to **Ctrl + .** and
+  **Ctrl + ,**.
+- Added hotkey to control click (pass) through of window position and clicking.  Works on all platforms.  The hotkey by default is **Ctrl + t**.
+- Added Wayland GNOME-Shell hotkey control for Float on Top.  It is Ctrl + w
+  by default.  Note, however, that pass through will not automatically set
+  Float on Top as in X11, macOS or Windows.  This is a limitation of Wayland.
+- Fixed pip.sh script to call pip on the local mrv2 install.
+- Added information about environment (desktop, os and kernel) of the machine that was used to build it.
+- Made Build and Running log information tidier.
+- Cleaned up log messages a bit and added a -logLevel flag.
+- Added case matching to Hotkey searches.
+- Hotkey names are now listed alphabetically in all languages.
+- Hotkeys are now listed using GNOME's keyboard conventions in the Hotkey window, which are cleaner.
+- Added Window/Toggle Click Through to menus.
+- Added Window/More UI Transparency and Window/Less UI Transparency to menus.
+- Added git branch and short hash of build to the About window.
+- Improved build times on successive runme.sh runs.
+- Improved translations.
+
+
+v1.3.2
+======
+
+- Added support for Chromaticities attribute in OpenEXR files.
+- Added support for Y, RY, BY OpenEXR images.
+- Made YC OpenEXR conversion use file chromaticities.
+- Hiding an audio track in an .otio timeline now turns off audio for that track.
+- Added support for OpenEXR's ripmaps and mipmaps.
+- Made Mipmap and Ripmaps' rounding mode show as "UP" or "DOWN".
+- Made Line Order in Media Info Panel show as Increasing Y, Decreasing Y or Random instead of a number.
+- Added Python functions: annotations.getTimes() to get the times where there are annotations.
+- Added Python function: cmd.saveSingleFrame() to save the current frame.
+- Added Python function: cmd.saveMultipleFrames() to save multiple frames from a list of times, like those returned from annotations.getTimes().
+- Fixed instantiation of mrv2.io.SaveOptions().
+- Made Page Up/Page Down change images always, instead of scrolling the panel
+  sidebar.
+- Fixed color refreshing in timeline panel when switching color themes.
+- Fixed text annotations saving in PDF, movies or sequences on macOS Sonoma and Sequoia.
+- Fixed zoom factor capture on high DPI displays on macOS Sonoma and Sequoia.
+- Removed printing of profile when not saving a movie.
+- Fixed opening a session file from the command-line when the Python panel was open.
+- Improved Python Editor's highlighting of keywords.
+- Fixed OpenGL capture of viewport on macOS, leading to offsets after some frames.
+
+
+v1.3.1
+======
+
+- Updated docs.
+- Fixed Image/Version/Next and Image/Version/Previous always going to the last
+  clips.  The routines are also faster now.
+- Fixed Image/Version menu not appearing when some directories had dashes and
+  numbers in them.
+- Made versioning regex get escaped, like Python's re.escape() function.
+- Added support for version switching of clips in .otio timeline.   You need
+  to be stopped at a certain clip with a proper version name to change it.
+- Fixed showing of timelines that had the "enabled" set to false on them.
+- Added 'm' hotkey to mark the in and out points of a clip in the .otio
+  timeline.
+- Added toggling visible state of tracks in Timeline Viewport.
+- Upgraded to OpenEXR v3.3.2.
+- Added OpenEXR's headers Compression, Compression Num. Scanlines,
+  and Is Deep, Is Lossy.
+- Added support for Flame's .otio files using OTIO's SerializableContainer in
+  them.
+- Updated libvpx compilation to MSVC2022.
+- Updated to FLTK's release 1.4.1.
+- Updated pyFTLK to official 1.4 release.
+
+  ** COMPATIBILITY NOTE **
+
+  Note that this pyFLTK update changes the namespace from fltk14 to fltk.
+  If you are using:
+
+``
+  from fltk14 import *
+``
+
+  in your scripts, you will need to change it to:
+
+``
+  from fltk import *
+``
+  
+- Improved build reporting swig version used.
+- Made tlRender compile after FLTK so that preferences can be read from
+  tlRender.
+- Made Path Mappings to work on .otio files.  If building from source, you may
+  need to do a:
+
+       $ runme.sh clean
+	   
+- Added displaying of clip names in the otio files in the HUD.
+- Improved performance of Data Window and Display Window when reading 
+  multipart OpenEXRs.
+- Fixed crashes of PlaylistButton when there were no tracks or stack.
+- Updated AI translations.
+- Fixed opening of sequences with Open Directory or dragging an actual
+  directory to mrv2.
+- Updated pyFLTK to use Git in sourceforge.
+- Fixed Python compilation on new macOS that is no longer passing neither
+  DYLD_LIBRARY_PATH nor DYLD_FALLBACK_LIBRARY_PATH to subshells.
+- Fixed "Always Save on Exit" getting confused about the monitor where to open
+  the window.
+- Fixed libplacebo compilation linking in unneeded libshaderc.dylib.
+- Added support for .m4a audio files used in Quicktime.
+- Sped up building by removing yasm dependency.
+- Added Preferences->Timeline->Video Start Frame to set the start frame of video
+  files.  By default it is 0.  This setting does not effect sequences nor .otio
+  timelines.
+- Fixed thumbnails of movie files not showing the right frame when Video Start
+  Frame was different than 0. 
+- Added "File/Save Audio" to save only the audio track disregarding video.
+- Constrained Save Audio Formats/Containers to those supported by LGPL mrv2.
+- Fixed File/Save Audio for 48KHZ audios.
+- Fixed pixel aspect ratio reading from movie files.
+- Added changing pixel aspect ratio interactively from the Media Information
+  Panel.
+- Added comparison modes with their possible shortcuts to mrv2's View/Compare
+  menu.
+  
+
+v1.3.0
+======
+
+One major new feature and one important bug fix.
+
+- Added tone-mapping of HDR videos.  Note that FFmpeg seems to be buggy when
+  reading the frame metadata, so we must rely on the stream metadata only.
+  Note that to compile this on Windows, you must install MSVC's shipped clang
+  compiler.
+  
+- Fixed tiling behavior (dragging of timeline bar not making view window
+  smaller) which got broken in v1.2.9.
+  
+
 v1.2.9
 ======
 
@@ -20,6 +300,7 @@ v1.2.9
   make it more clear that that project is GPL compatible, not BSD one.
 - Fixed selecting montior's Display/View to None from the Menus.
 - Updated OpenColorIO to v2.3.4.
+- Updated to OpenUSD v0.24.8.
 
 
 v1.2.8

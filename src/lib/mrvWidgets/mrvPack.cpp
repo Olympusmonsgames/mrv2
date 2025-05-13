@@ -1,6 +1,28 @@
-// SPDX-License-Identifier: BSD-3-Clause
-// mrv2
-// Copyright Contributors to the mrv2 Project. All rights reserved.
+//
+// "$Id$"
+//
+// Copyright 1998-2006 by Bill Spitzak and others.
+// Port to fltk1.4 by Gonzalo Garramuño.
+//
+// This library is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Library General Public
+// License as published by the Free Software Foundation; either
+// version 2 of the License, or (at your option) any later version.
+//
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Library General Public License for more details.
+//
+// You should have received a copy of the GNU Library General Public
+// License along with this library; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+// USA.
+//
+// Please report all bugs and problems on the following page:
+//
+//    http://www.fltk.org/str.php
+//
 
 //
 // This is a nabbed copy of fltk1.3.x Fl_Pack, modified to allow the
@@ -14,9 +36,12 @@
 // Bugs: ?
 
 #include <FL/Fl.H>
+#include <FL/platform.H>
 #include <FL/fl_draw.H>
 
-#include "mrvPack.h"
+#include "mrvUI/mrvDesktop.h"
+
+#include "mrvWidgets/mrvPack.h"
 
 namespace mrv
 {
@@ -152,13 +177,11 @@ namespace mrv
         }
     }
 
-    // void Pack::resize( int X, int Y, int W, int H )
-    // {
-    //     std::cerr << "Pack: " << (label() ? label() : "(null)" ) << " resize
-    //     " << X
-    //               << ", " << Y << " WxH " << W << "x" << H << std::endl;
-    //     return Fl_Group::resize( X, Y, W, H );
-    // }
+    void Pack::resize(int X, int Y, int W, int H)
+    {
+        Fl_Widget::resize(X, Y, W, H);
+        redraw();
+    }
 
     void Pack::draw()
     {
@@ -239,8 +262,16 @@ namespace mrv
                 }
                 if (X != o->x() || Y != o->y() || W != o->w() || H != o->h())
                 {
-                    o->resize(X, Y, W, H);
-                    o->clear_damage(FL_DAMAGE_ALL);
+                    if (desktop::Wayland())
+                    {
+                        if (!o->as_window())
+                            o->resize(X, Y, W, H);
+                    }
+                    else
+                    {
+                        o->resize(X, Y, W, H);
+                        o->clear_damage(FL_DAMAGE_ALL);
+                    }
                 }
                 if (d & FL_DAMAGE_ALL)
                 {

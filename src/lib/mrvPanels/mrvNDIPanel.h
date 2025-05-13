@@ -4,14 +4,21 @@
 
 #pragma once
 
-#include "mrvPanelWidget.h"
+#ifdef TLRENDER_NDI
+
+#include "mrvPanels/mrvPanelWidget.h"
+
+#include <tlDevice/OutputData.h>
 
 class ViewerUI;
 class Fl_Menu_Item;
+class Fl_Button;
 
 namespace mrv
 {
-#ifdef TLRENDER_NDI
+
+    class ToggleButton;
+    
     namespace panel
     {
         class NDIPanel : public PanelWidget
@@ -21,17 +28,16 @@ namespace mrv
             ~NDIPanel();
 
             void add_controls() override;
-
-            static void refresh_sources_cb(void* v);
-            void refresh_sources();
-
+            
         protected:
-            void _open_ndi(const Fl_Menu_Item*);
-
+            void _ndi_input(const Fl_Menu_Item*);
+            void _ndi_output(ToggleButton*);
+            device::PixelType  _ndi_fourCC(int fltk_value);
         private:
             MRV2_PRIVATE();
         };
 
     } // namespace panel
-#endif // TLRENDER_NDI
 } // namespace mrv
+
+#endif // TLRENDER_NDI

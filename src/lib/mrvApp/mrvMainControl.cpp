@@ -14,6 +14,8 @@
 #include "mrvApp/mrvMainControl.h"
 #include "mrvApp/mrvApp.h"
 
+#include <tlDevice/IOutput.h>
+
 #include <tlCore/File.h>
 #include <tlCore/String.h>
 #include <tlCore/StringFormat.h>
@@ -40,6 +42,7 @@ namespace mrv
         timeline::ImageOptions imageOptions;
         timeline::DisplayOptions displayOptions;
         timeline::CompareOptions compareOptions;
+        timeline::BackgroundOptions backgroundOptions;
         Stereo3DOptions stereo3DOptions;
         FilesPanelOptions filesPanelOptions;
         image::VideoLevels outputVideoLevels;
@@ -52,6 +55,8 @@ namespace mrv
         std::shared_ptr<observer::ValueObserver<int> > aIndexObserver;
         std::shared_ptr<observer::ValueObserver<int> > stereoIndexObserver;
         std::shared_ptr<observer::ListObserver<int> > bIndexesObserver;
+        std::shared_ptr<observer::ValueObserver<timeline::BackgroundOptions> >
+            backgroundOptionsObserver;
         std::shared_ptr<observer::ValueObserver<timeline::CompareOptions> >
             compareOptionsObserver;
         std::shared_ptr<observer::ValueObserver<Stereo3DOptions> >
@@ -111,6 +116,21 @@ namespace mrv
                 tcp->pushMessage(msg);
                 _widgetUpdate();
             });
+        p.backgroundOptionsObserver =
+            observer::ValueObserver<timeline::BackgroundOptions>::create(
+                p.ui->uiView->observeBackgroundOptions(),
+                [this](const timeline::BackgroundOptions& value)
+                {
+                    _p->backgroundOptions = value;
+
+                    Message msg;
+                    Message opts(value);
+                    msg["command"] = "setBackgroundOptions";
+                    msg["value"] = opts;
+                    tcp->pushMessage(msg);
+
+                    _widgetUpdate();
+                });
         p.compareOptionsObserver =
             observer::ValueObserver<timeline::CompareOptions>::create(
                 app->filesModel()->observeCompareOptions(),
@@ -177,7 +197,7 @@ namespace mrv
 
         p.lutOptions = value;
 
-        _widgetUpdate();
+        _displayUpdate();
     }
 
     void MainControl::setDisplayOptions(const timeline::DisplayOptions& value)
@@ -213,6 +233,10 @@ namespace mrv
         }
     }
 
+    //
+    // In this function, we deal with LUT and Display options all at
+    // once as those will need updating of shader values.
+    //
     void MainControl::_displayUpdate()
     {
         TLRENDER_P();
@@ -234,9 +258,15 @@ namespace mrv
         p.ui->uiTimeline->setDisplayOptions(display);
         p.ui->uiTimeline->redraw();
 
+        auto outputDevice = App::app->outputDevice();
+        if (outputDevice)
+        {
+            outputDevice->setLUTOptions(p.lutOptions);
+            outputDevice->setDisplayOptions({p.displayOptions});
+        }
+        
         if (panel::colorPanel)
         {
-            panel::colorPanel->setLUTOptions(p.lutOptions);
             panel::colorPanel->setDisplayOptions(p.displayOptions);
         }
     }
@@ -251,6 +281,12 @@ namespace mrv
         {
             view = p.ui->uiSecondary->viewport();
             view->setCompareOptions(p.compareOptions);
+        }
+
+        auto outputDevice = App::app->outputDevice();
+        if (outputDevice)
+        {
+            outputDevice->setCompareOptions(p.compareOptions);
         }
 
         if (panel::comparePanel)
@@ -453,18 +489,16 @@ namespace mrv
             view->redraw();
         }
 
-#ifdef TLRENDER_BMD
-        p.app->outputDevice()->setOCIOOptions(p.ocioOptions);
-        p.app->outputDevice()->setLUTOptions(p.lutOptions);
-        p.app->outputDevice()->setImageOptions(imageOptions);
-        for (auto& i : displayOptions)
+        const auto& outputDevice = app->outputDevice();
+        if (outputDevice)
         {
-            i.videoLevels = p.outputVideoLevels;
+            outputDevice->setBackgroundOptions(p.backgroundOptions);
+            outputDevice->setOCIOOptions(p.ocioOptions);
+            outputDevice->setLUTOptions(p.lutOptions);
+            outputDevice->setImageOptions({p.imageOptions});
+            outputDevice->setDisplayOptions({p.displayOptions});
+            outputDevice->setCompareOptions(p.compareOptions);
         }
-        p.app->outputDevice()->setDisplayOptions(displayOptions);
-        p.app->outputDevice()->setCompareOptions(p.compareOptions);
-        p.app->outputDevice()->setTimelinePlayer(p.player);
-#endif
 
         p.ui->uiMain->fill_menu(p.ui->uiMenuBar);
     }

@@ -2,9 +2,11 @@
 // mrv2
 // Copyright Contributors to the mrv2 Project. All rights reserved.
 
+#include <algorithm> // For std::clamp
 #include <string>
 #include <sstream>
 #include <filesystem>
+#include <vector>
 namespace fs = std::filesystem;
 
 #include <tlIO/System.h>
@@ -17,9 +19,11 @@ namespace fs = std::filesystem;
 #include <tlGL/Util.h>
 #include <tlTimelineGL/Render.h>
 
+#include "mrvCore/mrvImage.h"
 #include "mrvCore/mrvLocale.h"
 #include "mrvCore/mrvMath.h"
 #include "mrvCore/mrvUtil.h"
+#include "mrvCore/mrvWait.h"
 
 #include "mrvWidgets/mrvProgressReport.h"
 
@@ -27,6 +31,7 @@ namespace fs = std::filesystem;
 
 #include "mrvNetwork/mrvTCP.h"
 
+#include "mrvFl/mrvSave.h"
 #include "mrvFl/mrvSaveOptions.h"
 #include "mrvFl/mrvIO.h"
 
@@ -44,32 +49,23 @@ namespace
 namespace mrv
 {
 
-    int save_single_frame(
-        const std::string& file, const ViewerUI* ui, SaveOptions options)
+    int _save_single_frame(
+        std::string file, const ViewerUI* ui, SaveOptions options)
     {
-        std::string msg;
-
         int ret = 0;
+        std::string msg;
         Viewport* view = ui->uiView;
-        bool presentation = view->getPresentationMode();
-        bool hud = view->getHudActive();
 
+        file::Path path(file);
+
+        // Time range.
         auto player = view->getTimelinePlayer();
         if (!player)
             return -1; // should never happen
 
-        file::Path path(file);
-
-        if (file::isTemporaryEDL(path))
-        {
-            LOG_ERROR(_("Cannot save an NDI stream"));
-            return -1;
-        }
-
         // Stop the playback
         player->stop();
 
-        // Time range.
         auto currentTime = player->currentTime();
 
         const std::string& extension = path.getExtension();
@@ -87,8 +83,8 @@ namespace mrv
             char buf[256];
 
 #ifdef TLRENDER_EXR
-            ioOptions["OpenEXR/Compression"] = getLabel(options.exrCompression);
-            ioOptions["OpenEXR/PixelType"] = getLabel(options.exrPixelType);
+            ioOptions["OpenEXR/Compression"] =
+                tl::string::Format("{0}").arg(options.exrCompression);
             snprintf(buf, 256, "%d", options.zipCompressionLevel);
             ioOptions["OpenEXR/ZipCompressionLevel"] = buf;
             {
@@ -122,8 +118,8 @@ namespace mrv
             const SaveResolution resolution = options.resolution;
             {
                 auto compareSize = ui->uiView->getRenderSize();
-                if (!options.annotations ||
-                    compareSize.w == 0 || compareSize.h == 0)
+                if (!options.annotations || compareSize.w == 0 ||
+                    compareSize.h == 0)
                 {
                     renderSize = info.video[layerId].size;
                 }
@@ -141,26 +137,24 @@ namespace mrv
 
                     msg = tl::string::Format(_("Rotated image info: {0}"))
                               .arg(renderSize);
-                    LOG_INFO(msg);
+                    LOG_STATUS(msg);
                 }
                 if (resolution == SaveResolution::kHalfSize)
                 {
                     renderSize.w /= 2;
                     renderSize.h /= 2;
-                    msg = tl::string::Format(_("Scaled image info: {0}"))
-                              .arg(renderSize);
-                    LOG_INFO(msg);
                 }
                 else if (resolution == SaveResolution::kQuarterSize)
                 {
                     renderSize.w /= 4;
                     renderSize.h /= 4;
-                    msg = tl::string::Format(_("Scaled image info: {0}"))
-                              .arg(renderSize);
-                    LOG_INFO(msg);
                 }
+                msg = tl::string::Format(_("Render size: {0}"))
+                      .arg(renderSize);
+                LOG_STATUS(msg);
             }
 
+                    
             // Create the renderer.
             render = timeline_gl::Render::create(context);
             offscreenBufferOptions.colorType = image::PixelType::RGBA_F32;
@@ -180,20 +174,44 @@ namespace mrv
 
             io::Info ioInfo;
             image::Info outputInfo;
-
             outputInfo.size = renderSize;
+            
+            auto tags = ui->uiView->getTags();
+
+
             std::shared_ptr<image::Image> outputImage;
 
             outputInfo.pixelType = info.video[layerId].pixelType;
+            outputInfo.size.pixelAspectRatio = 1.0;
+
+            math::Box2i displayWindow(0, 0, renderSize.w, renderSize.h);
+            math::Box2i dataWindow(0, 0, renderSize.w, renderSize.h);
+            if (!options.annotations && saveEXR)
+            {
+                auto i = tags.find("Data Window");
+                if (i != tags.end())
+                {
+                    std::stringstream s(i->second);
+                    s >> dataWindow;
+                }
+                i = tags.find("Display Window");
+                if (i != tags.end())
+                {
+                    std::stringstream s(i->second);
+                    s >> displayWindow;
+                }
+                if (options.exrSaveContents == SaveContents::kDisplayWindow)
+                    dataWindow = displayWindow;
+                
+                outputInfo.size.w = dataWindow.max.x - dataWindow.min.x + 1;
+                outputInfo.size.h = dataWindow.max.y - dataWindow.min.y + 1;
+            }
 
             {
-                std::string msg = tl::string::Format(_("Image info: {0} {1}"))
-                                      .arg(outputInfo.size)
-                                      .arg(outputInfo.pixelType);
-                LOG_INFO(msg);
 
                 if (options.annotations)
                 {
+                    view->setShowVideo(options.video);
                     view->setActionMode(ActionMode::kScrub);
                     view->setPresentationMode(true);
                     view->redraw();
@@ -201,13 +219,22 @@ namespace mrv
                     Fl::flush();
                     view->flush();
                     Fl::check();
-                    
-                    const auto& viewportSize = view->getViewportSize();
+
+                    // returns pixel_w(), pixel_h()
+                    auto viewportSize = view->getViewportSize();
+                    const float pixels_unit = view->pixels_per_unit();
+                    viewportSize.w /= pixels_unit;
+                    viewportSize.h /= pixels_unit;
+
                     if (viewportSize.w >= renderSize.w &&
                         viewportSize.h >= renderSize.h)
                     {
                         view->setFrameView(false);
+#ifdef __APPLE__
+                        view->setViewZoom(pixels_unit);
+#else
                         view->setViewZoom(1.0);
+#endif
                         view->centerView();
                         view->redraw();
                         // flush is needed
@@ -221,23 +248,77 @@ namespace mrv
                                       "Will scale to the viewport size."));
 
                         view->frameView();
-                        
-                        outputInfo.size.w = viewportSize.w;
-                        outputInfo.size.h = viewportSize.h;
+
+                        float aspectImage =
+                            static_cast<float>(renderSize.w) / renderSize.h;
+                        float aspectViewport =
+                            static_cast<float>(viewportSize.w) / viewportSize.h;
+
+                        if (aspectImage > aspectViewport)
+                        {
+                            // Fit to width
+                            outputInfo.size.w = viewportSize.w;
+                            outputInfo.size.h = viewportSize.w / aspectImage;
+                        }
+                        else
+                        {
+                            // Fit to height
+                            outputInfo.size.h = viewportSize.h;
+                            outputInfo.size.w = viewportSize.h * aspectImage;
+                        }
                     }
 
-                    X = (viewportSize.w - outputInfo.size.w) / 2;
-                    Y = (viewportSize.h - outputInfo.size.h) / 2;
+                    X = std::max(0, (viewportSize.w - outputInfo.size.w) / 2);
+                    Y = std::max(0, (viewportSize.h - outputInfo.size.h) / 2);
+
+                    outputInfo.size.w = std::round(outputInfo.size.w);
+                    outputInfo.size.h = std::round(outputInfo.size.h);
 
                     msg = tl::string::Format(_("Viewport Size: {0} - "
                                                "X={1}, Y={2}"))
                               .arg(viewportSize)
                               .arg(X)
                               .arg(Y);
-                    LOG_INFO(msg);
+                    LOG_STATUS(msg);
                 }
             }
 
+#ifdef __APPLE__
+            if (options.annotations)
+            {
+                switch (outputInfo.pixelType)
+                {
+                case image::PixelType::RGB_F16:
+                case image::PixelType::RGBA_F16:
+                    outputInfo.pixelType = image::PixelType::RGBA_F16;
+                    break;
+                case image::PixelType::RGB_F32:
+                case image::PixelType::RGBA_F32:
+                    outputInfo.pixelType = image::PixelType::RGBA_F32;
+                    break;
+                default:
+                    if (saveHDR)
+                        outputInfo.pixelType = image::PixelType::RGBA_F32;
+                    else if (saveEXR)
+                        outputInfo.pixelType = image::PixelType::RGBA_F16;
+                    else
+                        outputInfo.pixelType = image::PixelType::RGBA_U8;
+                    break;
+                }
+            }
+#endif
+
+            if (!options.annotations)
+            {
+                std::string layerName = ui->uiColorChannel->label();
+                outputInfo.pixelType = info.video[layerId].pixelType;
+                msg = tl::string::Format(_("Image Layer '{0}' info: {1} {2}"))
+                      .arg(layerName)
+                      .arg(outputInfo.size)
+                      .arg(outputInfo.pixelType);
+                LOG_STATUS(msg);
+            }
+            
             outputInfo = writerPlugin->getWriteInfo(outputInfo);
             if (image::PixelType::None == outputInfo.pixelType)
             {
@@ -254,27 +335,36 @@ namespace mrv
                           _("Writer plugin did not get output info.  "
                             "Defaulting to {0}"))
                           .arg(offscreenBufferOptions.colorType);
-                LOG_INFO(msg);
+                LOG_STATUS(msg);
             }
 
-#ifdef TLRENDER_EXR
-            if (saveEXR)
-            {
-                outputInfo.pixelType = options.exrPixelType;
-            }
-#endif
             if (saveHDR)
             {
                 outputInfo.pixelType = image::PixelType::RGB_F32;
                 offscreenBufferOptions.colorType = image::PixelType::RGB_F32;
             }
+            
+#ifdef TLRENDER_EXR
+            if (saveEXR)
+            {
+                if (options.annotations)
+                {
+                    outputInfo.pixelType = options.exrPixelType;
+                }
+                offscreenBufferOptions.colorType = outputInfo.pixelType;
+            }
+#endif
 
             std::string msg = tl::string::Format(_("Output info: {0} {1}"))
                                   .arg(outputInfo.size)
                                   .arg(outputInfo.pixelType);
-            LOG_INFO(msg);
+            LOG_STATUS(msg);
 
+#ifdef TLRENDER_EXR
+            ioOptions["OpenEXR/PixelType"] = getLabel(outputInfo.pixelType);
+#endif
             outputImage = image::Image::create(outputInfo);
+            
             ioInfo.video.push_back(outputInfo);
             ioInfo.videoTime = oneFrameTimeRange;
 
@@ -299,7 +389,7 @@ namespace mrv
             {
                 std::string msg = tl::string::Format(_("OpenGL info: {0}"))
                                       .arg(offscreenBufferOptions.colorType);
-                LOG_INFO(msg);
+                LOG_STATUS(msg);
             }
 
             // Turn off hud so it does not get captured by glReadPixels.
@@ -318,6 +408,48 @@ namespace mrv
                 // Refresh the view (so we turn off the HUD, for example).
                 view->redraw();
                 view->flush();
+                Fl::flush();
+
+#ifdef __APPLE__
+                Fl_RGB_Image* tmp = fl_capture_window(
+                    view, X, Y, outputInfo.size.w, outputInfo.size.h);
+
+                Fl_Image* rgb = tmp->copy(outputInfo.size.w, outputInfo.size.h);
+                tmp->alloc_array = 1;
+                delete tmp;
+
+                // Access the first pointer in the data array
+                const char* const* data = rgb->data();
+
+                // Flip image in Y
+                switch (outputImage->getPixelType())
+                {
+                case image::PixelType::RGBA_U8:
+                    flipImageInY(
+                        (uint8_t*)outputImage->getData(),
+                        (const uint8_t*)data[0], rgb->w(), rgb->h(), rgb->d(),
+                        4);
+                    break;
+                case image::PixelType::RGBA_F16:
+                    flipImageInY(
+                        (Imath::half*)outputImage->getData(),
+                        (const uint8_t*)data[0], rgb->w(), rgb->h(), rgb->d(),
+                        4);
+                    break;
+                case image::PixelType::RGBA_F32:
+                    flipImageInY(
+                        (float*)outputImage->getData(), (const uint8_t*)data[0],
+                        rgb->w(), rgb->h(), rgb->d(), 4);
+                    break;
+                default:
+                    LOG_ERROR(
+                        _("Unsupported output format: ")
+                        << outputImage->getPixelType());
+                    break;
+                }
+
+                delete rgb;
+#else
 
                 GLenum imageBuffer = GL_FRONT;
 
@@ -328,28 +460,24 @@ namespace mrv
                 {
                     imageBuffer = GL_BACK;
                 }
-                else
-                {
-                    view->make_current();
-                }
 
                 glReadBuffer(imageBuffer);
+
+                glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
                 CHECK_GL;
                 glReadPixels(
                     X, Y, outputInfo.size.w, outputInfo.size.h, format, type,
                     outputImage->getData());
+#endif
                 CHECK_GL;
             }
             else
             {
                 // Get the videoData
-                const auto& videoData =
-                    timeline->getVideo(currentTime).future.get();
-
-                view->make_current();
-                gl::initGLAD();
-
+                auto videoData = timeline->getVideo(currentTime).future.get();
+                videoData.layers[0].image->setPixelAspectRatio(1.F);
+                
                 // Render the video.
                 gl::OffscreenBufferBinding binding(buffer);
                 CHECK_GL;
@@ -380,40 +508,175 @@ namespace mrv
                     outputInfo.layout.endian != memory::getEndian());
                 CHECK_GL;
 
-                glReadPixels(
-                    0, 0, outputInfo.size.w, outputInfo.size.h, format, type,
-                    outputImage->getData());
+                X = dataWindow.min.x;
+
+                //
+                // OpenGL Framebuffer:
+                // Origin (0,0) is at the bottom-left, and Y increases upwards.
+                // However, when reading pixels with glReadPixels, the image
+                // data is stored top-down.
+                //
+                Y = displayWindow.max.y - (dataWindow.min.y +
+                                           outputImage->getHeight()) + 1;
+
+                glReadPixels(X, Y, outputImage->getWidth(),
+                             outputImage->getHeight(), format, type,
+                             outputImage->getData());
                 CHECK_GL;
             }
 
+            outputImage->setTags(tags);
             writer->writeVideo(currentTime, outputImage);
-
-            // Rename file name that got saved with a frame number to the actual
-            // frame that the user set.
-            int64_t currentFrame = currentTime.to_frames();
-            char filename[4096];
-            snprintf(
-                filename, 4096, "%s%s%0*" PRId64 "%s",
-                path.getDirectory().c_str(), path.getBaseName().c_str(),
-                static_cast<int>(path.getPadding()), currentFrame,
-                path.getExtension().c_str());
-
-            if (filename != file && !options.noRename)
-            {
-                fs::rename(fs::path(filename), fs::path(file));
-            }
         }
         catch (const std::exception& e)
         {
             LOG_ERROR(e.what());
             ret = -1;
         }
+        return ret;
+    }
+
+    int save_multiple_frames(
+        const std::string& file, const std::vector<otime::RationalTime>& times,
+        const ViewerUI* ui, SaveOptions options)
+    {
+        int ret = 0;
+        Viewport* view = ui->uiView;
+        bool presentation = view->getPresentationMode();
+        bool hud = view->getHudActive();
+
+        auto player = view->getTimelinePlayer();
+        if (!player)
+            return -1;
+
+        file::Path path(file);
+
+        if (file::isTemporaryEDL(path))
+        {
+            LOG_ERROR(_("Cannot save an NDI stream"));
+            return -1;
+        }
+
+        for (const auto& time : times)
+        {
+            player->seek(time);
+            waitForFrame(player, time);
+
+            _save_single_frame(file, ui, options);
+        }
 
         view->setFrameView(ui->uiPrefs->uiPrefsAutoFitImage->value());
         view->setHudActive(hud);
+        view->setShowVideo(true);
         view->setPresentationMode(presentation);
         tcp->unlock();
-        
+
+        auto settings = ui->app->settings();
+        if (file::isReadable(file))
+        {
+            settings->addRecentFile(file);
+            ui->uiMain->fill_menu(ui->uiMenuBar);
+        }
+        return ret;
+    }
+
+    int save_multiple_annotation_frames(
+        const std::string& file, const std::vector<otime::RationalTime>& times,
+        const ViewerUI* ui, SaveOptions options)
+    {
+        int ret = 0;
+        Viewport* view = ui->uiView;
+        bool presentation = view->getPresentationMode();
+        bool hud = view->getHudActive();
+
+        auto player = view->getTimelinePlayer();
+        if (!player)
+            return -1;
+
+        file::Path path(file);
+
+        if (file::isTemporaryEDL(path))
+        {
+            LOG_ERROR(_("Cannot save an NDI stream"));
+            return -1;
+        }
+
+        for (const auto& time : times)
+        {
+            player->seek(time);
+            waitForFrame(player, time);
+
+            _save_single_frame(file, ui, options);
+        }
+
+        view->setFrameView(ui->uiPrefs->uiPrefsAutoFitImage->value());
+        view->setHudActive(hud);
+        view->setShowVideo(true);
+        view->setPresentationMode(presentation);
+        tcp->unlock();
+
+        auto settings = ui->app->settings();
+        if (file::isReadable(file))
+        {
+            settings->addRecentFile(file);
+            ui->uiMain->fill_menu(ui->uiMenuBar);
+        }
+        return ret;
+    }
+
+    int save_single_frame(
+        const std::string& file, const ViewerUI* ui, SaveOptions options)
+    {
+        std::string msg;
+
+        int ret = 0;
+        Viewport* view = ui->uiView;
+        bool presentation = view->getPresentationMode();
+        bool hud = view->getHudActive();
+
+        file::Path path(file);
+
+        if (file::isTemporaryEDL(path))
+        {
+            LOG_ERROR(_("Cannot save an NDI stream"));
+            return -1;
+        }
+
+        // Time range.
+        auto player = view->getTimelinePlayer();
+        if (!player)
+            return -1; // should never happen
+
+        // Stop the playback
+        player->stop();
+
+        const auto& currentTime = player->currentTime();
+
+        // Save this frame with the frame number
+        _save_single_frame(file, ui, options);
+
+        wait::milliseconds(1000);
+
+        // Rename file name that got saved with a frame number to the actual
+        // frame that the user set.
+        int64_t currentFrame = currentTime.to_frames();
+        char filename[4096];
+        snprintf(
+            filename, 4096, "%s%s%0*" PRId64 "%s", path.getDirectory().c_str(),
+            path.getBaseName().c_str(), static_cast<int>(path.getPadding()),
+            currentFrame, path.getExtension().c_str());
+
+        if (filename != file && !options.noRename)
+        {
+            fs::rename(fs::path(filename), fs::path(file));
+        }
+
+        view->setFrameView(ui->uiPrefs->uiPrefsAutoFitImage->value());
+        view->setHudActive(hud);
+        view->setShowVideo(true);
+        view->setPresentationMode(presentation);
+        tcp->unlock();
+
         auto settings = ui->app->settings();
         if (file::isReadable(file))
         {

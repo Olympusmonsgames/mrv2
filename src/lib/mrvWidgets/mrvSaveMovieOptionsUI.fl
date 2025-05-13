@@ -1,5 +1,5 @@
 # data file for the Fltk User Interface Designer (fluid)
-version 1.0400
+version 1.0500
 i18n_type 1
 i18n_include {<libintl.h>}
 i18n_conditional {}
@@ -25,10 +25,10 @@ decl {\#include "tlCore/String.h"} {public global
 decl {\#include "mrvCore/mrvI8N.h"} {public global
 }
 
-decl {\#include "mrvCore/mrvHome.h"} {public global
+decl {\#include "mrvCore/mrvHome.h"} {selected public global
 }
 
-decl {\#include "mrvApp/mrvSettingsObject.h"} {public global
+decl {\#include "mrvApp/mrvSettingsObject.h"} {selected public global
 }
 
 decl {\#include "mrViewer.h"} {public global
@@ -207,7 +207,7 @@ v->hide();}
       }
     }
     Fl_Window uiAdvancedSettings {
-      label {Advanced Settings} open
+      label {Advanced Settings}
       xywh {1185 376 411 310} type Double hide hotspot modal
     } {
       Fl_Check_Button Override {
@@ -223,11 +223,11 @@ settings->setValue("SaveMovie/Override", value);}
         callback {int value = o->value();
 
 auto settings = mrv::App::app->settings();
-settings->setValue("SaveMovie/Color Range", value);} open
+settings->setValue("SaveMovie/Color Range", value);}
         tooltip {FFMpeg's Color Range for the codec selected} xywh {130 60 170 29} down_box BORDER_BOX
       } {
         MenuItem {} {
-          label {TV (Legal Range)} selected
+          label {TV (Legal Range)}
           xywh {0 0 100 20}
         }
         MenuItem {} {
@@ -339,7 +339,7 @@ settings->setValue("SaveMovie/Color Primaries", value);}
         callback {int value = o->value();
 
 auto settings = mrv::App::app->settings();
-settings->setValue("SaveMovie/Color TRC", value);} open
+settings->setValue("SaveMovie/Color TRC", value);}
         tooltip {FFMpeg's Color Transfer Function settings for the codec selected.} xywh {129 190 170 29} down_box BORDER_BOX
       } {
         MenuItem {} {
@@ -457,7 +457,8 @@ uiMain->show();
 while (uiMain->visible())
   Fl::check();} {}
   }
-  Function {help_profile_cb()} {} {
+  Function {help_profile_cb()} {open
+  } {
     code {uiHelpWindow->label(_("Profile Help"));
 auto buffer = uiHelp->buffer();
 buffer->text(_(R"(
@@ -577,8 +578,7 @@ options.
 )"));
 uiHelpWindow->show();} {}
   }
-  Function {help_advanced_settings_cb()} {open
-  } {
+  Function {help_advanced_settings_cb()} {} {
     code {uiHelpWindow->label(_("Advanced Settings Help"));
 auto buffer = uiHelp->buffer();
 buffer->text(_(R"(
@@ -716,6 +716,32 @@ else if (codec == "ProRes_4444")
    }
 \#endif
 }
+else if (codec == "DNxHD")
+{      
+   v->add("YUV_422P");
+   v->add("YUV_422P_10LE");
+}
+else if (codec == "DNxHR_LB")
+{      
+   v->add("YUV_422P");
+}
+else if (codec == "DNxHR_SQ")
+{      
+   v->add("YUV_422P");
+}
+else if (codec == "DNxHR_HQ")
+{      
+   v->add("YUV_422P");
+}
+else if (codec == "DNxHR_HQX")
+{      
+   v->add("YUV_422P_10LE");
+}
+else if (codec == "DNxHR_444")
+{      
+   v->add("YUV_444P_10LE");
+   v->add("GBRP_10LE");
+}
 else if (codec == "VP9")
 { 
    v->add("YUV_420P");
@@ -727,12 +753,10 @@ else if (codec == "VP9")
    
    v->add("YUV_420P_10LE");
    v->add("YUV_422P_10LE");
-   v->add("YUV_440P_10LE");
    v->add("YUV_444P_10LE");
    
    v->add("YUV_420P_12LE");
    v->add("YUV_422P_12LE");
-   v->add("YUV_440P_12LE");
    v->add("YUV_444P_12LE");
    
    v->add("GBRP");
@@ -775,7 +799,8 @@ if (v->size() > 0)
     v->value(0);
 }} {}
   }
-  Function {add_presets(Fl_Choice* o, Fl_Choice* v)} {} {
+  Function {add_presets(Fl_Choice* o, Fl_Choice* v)} {open
+  } {
     code {const Fl_Menu_Item* item = &o->menu()[o->value()];
 if (!item || !item->label()) return;
 
@@ -834,6 +859,10 @@ for (auto entry : entries)
 {
 \#ifndef TLRENDER_X264
    if (entry == "H264")
+      continue;
+\#endif
+\#ifndef TLRENDER_SVTAV1
+   if (entry == "AV1")
       continue;
 \#endif
     o->add(gettext(entry.c_str()));

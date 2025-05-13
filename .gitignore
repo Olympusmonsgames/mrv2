@@ -29,6 +29,7 @@
 
 # Directories and backup files
 BUILD-*
+*-vulkan*
 tlRender/build*
 tlRender/debug_tests
 Qt5
@@ -52,3 +53,8 @@ packages
 .git
 .DS_Store
 
+
+#
+# Git files
+#
+.githooks/*

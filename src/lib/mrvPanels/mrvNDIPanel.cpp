@@ -10,21 +10,25 @@
 #    include <mutex>
 #    include <atomic>
 
+#    include <tlCore/ListObserver.h>
 #    include <tlCore/StringFormat.h>
-#    include <tlCore/NDIOptions.h>
+
+#    include <tlDevice/OutputData.h>
+#    include <tlDevice/NDI/NDIOptions.h>
+#    include <tlDevice/NDI/NDIOutputDevice.h>
+#    include <tlDevice/NDI/NDISystem.h>
+#    include <tlDevice/NDI/NDIUtil.h>
 
 #    include <FL/Fl_Choice.H>
-#    include <FL/Fl_Check_Button.H>
-
-#    include <Processing.NDI.Lib.h>
 
 #    include "mrvCore/mrvHome.h"
 #    include "mrvCore/mrvFile.h"
 #    include "mrvCore/mrvMemory.h"
 
+#    include "mrvWidgets/mrvToggleButton.h"
 #    include "mrvWidgets/mrvFunctional.h"
-#    include "mrvWidgets/mrvButton.h"
 #    include "mrvWidgets/mrvHorSlider.h"
+#    include "mrvWidgets/mrvInput.h"
 #    include "mrvWidgets/mrvCollapsibleGroup.h"
 
 #    include "mrvPanels/mrvPanelsCallbacks.h"
@@ -38,7 +42,7 @@
 
 namespace
 {
-    const char* kModule = "ndi";
+    const char* kModule = "ndi ";
 }
 
 namespace mrv
@@ -50,11 +54,14 @@ namespace mrv
         {
 
             PopupMenu* sourceMenu = nullptr;
-            PopupMenu* audioMenu = nullptr;
-            PopupMenu* bestFormatMenu = nullptr;
+            PopupMenu* inputAudioMenu = nullptr;
+            PopupMenu* inputFormatMenu = nullptr;
 
-            uint32_t no_sources = 0;
-            const NDIlib_source_t* p_sources = NULL;
+            PopupMenu* outputAudioMenu = nullptr;
+            PopupMenu* outputMetadataMenu = nullptr;
+            PopupMenu* outputFormatMenu = nullptr;
+            
+            std::shared_ptr<observer::ListObserver<device::DeviceInfo> > deviceObserver;
 
             static std::string lastStream;
 
@@ -63,100 +70,13 @@ namespace mrv
 
             struct PlayThread
             {
-                std::atomic<bool> found = false;
+                std::atomic<bool> running = false;
                 std::thread thread;
             };
             PlayThread play;
-
-            struct FindThread
-            {
-                NDIlib_find_instance_t NDI = nullptr;
-                std::atomic<bool> running = false;
-                std::atomic<bool> awake = false;
-                std::thread thread;
-            };
-            FindThread find;
-
-            std::atomic<bool> running = false;
         };
 
         std::string NDIPanel::Private::lastStream;
-
-        void NDIPanel::refresh_sources_cb(void* v)
-        {
-            NDIPanel* self = (NDIPanel*)v;
-            self->refresh_sources();
-        }
-
-        void NDIPanel::refresh_sources()
-        {
-            MRV2_R();
-
-            PopupMenu* m = r.sourceMenu;
-
-            if (m->popped() || !r.find.running)
-            {
-                r.find.awake = false;
-                return;
-            }
-
-            std::string sourceName;
-            bool changed = false;
-            const Fl_Menu_Item* item = nullptr;
-
-            // Empty menu returns 0, while all others return +1.
-            size_t numSources = r.no_sources;
-
-            // We substract 2: 1 for FLTK quirk and one for "None".
-            int size = m->size() - 2;
-            if (size < 0)
-                size = 0;
-
-            sourceName = r.lastStream;
-
-            if (numSources != size)
-            {
-                changed = true;
-            }
-            else
-            {
-                // child(0) is "None".
-                for (int i = 0; i < numSources; ++i)
-                {
-                    item = m->child(i + 1);
-                    if (!item->label() ||
-                        !strcmp(item->label(), r.p_sources[i].p_ndi_name))
-                    {
-                        changed = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!changed)
-            {
-                r.find.awake = false;
-                return;
-            }
-
-            m->clear();
-            m->add(_("None"));
-            int selected = 0;
-            for (int i = 0; i < r.no_sources; ++i)
-            {
-                const std::string ndiName = r.p_sources[i].p_ndi_name;
-                m->add(ndiName.c_str());
-                if (sourceName == ndiName)
-                {
-                    selected = i + 1;
-                }
-            }
-            m->menu_end();
-            if (selected >= 0 && selected < m->size())
-                m->value(selected);
-
-            r.find.awake = false;
-        }
 
         NDIPanel::NDIPanel(ViewerUI* ui) :
             _r(new Private),
@@ -168,55 +88,7 @@ namespace mrv
 
             Fl_SVG_Image* svg = load_svg("NDI.svg");
             g->bind_image(svg);
-
-            r.find.NDI = NDIlib_find_create_v2();
-
-            // Run for one minute
-            r.find.thread = std::thread(
-                [this]
-                {
-                    MRV2_R();
-
-                    r.find.running = true;
-                    while (r.find.running)
-                    {
-                        using namespace std::chrono;
-                        for (const auto start = high_resolution_clock::now();
-                             high_resolution_clock::now() - start <
-                             seconds(10);)
-                        {
-                            // Wait up till 1 second to check for new sources to
-                            // be added or removed
-                            if (!NDIlib_find_wait_for_sources(
-                                    r.find.NDI, 1000 /* milliseconds */))
-                            {
-                                break;
-                            }
-                        }
-
-                        if (!r.sourceMenu)
-                            continue;
-
-                        r.no_sources = std::numeric_limits<uint32_t>::max();
-                        while (r.no_sources ==
-                                   std::numeric_limits<uint32_t>::max() &&
-                               r.find.running)
-                        {
-                            // Get the updated list of sources
-                            r.p_sources = NDIlib_find_get_current_sources(
-                                r.find.NDI, &r.no_sources);
-                        }
-
-                        if (!r.find.awake)
-                        {
-                            Fl::awake(
-                                (Fl_Awake_Handler)refresh_sources_cb, this);
-                            r.find.awake = true;
-                        }
-                    }
-                    r.no_sources = 0;
-                });
-
+                        
             g->callback(
                 [](Fl_Widget* w, void* d)
                 {
@@ -230,18 +102,20 @@ namespace mrv
 
         NDIPanel::~NDIPanel()
         {
+            TLRENDER_P();
             MRV2_R();
 
-            r.find.awake = true;
-            r.find.running = false;
-
-            if (r.find.thread.joinable())
-                r.find.thread.join();
-
-            if (r.find.NDI)
+            r.play.running = false;
+            
+            r.cacheInfoObserver.reset();
+            r.deviceObserver.reset();
+            
+            auto model = p.ui->app->filesModel();
+            if (model)
             {
-                NDIlib_find_destroy(r.find.NDI);
-                r.find.NDI = nullptr;
+                auto aItem = model->observeA()->get();
+                if (aItem && file::isTemporaryNDI(aItem->path))
+                    model->close();
             }
         }
 
@@ -254,8 +128,9 @@ namespace mrv
             const std::string& prefix = tab_prefix();
 
             HorSlider* s;
-            Fl_Group *bg, *bg2;
+            Fl_Group* ig;
             std_any value;
+            int val;
             int open;
 
             int Y = g->y();
@@ -275,7 +150,7 @@ namespace mrv
                         cg->open();
 
                     const std::string& prefix = ndiPanel->tab_prefix();
-                    const std::string key = prefix + "NDI";
+                    const std::string key = prefix + "NDI Input";
 
                     auto settings = App::app->settings();
                     settings->setValue(key, static_cast<int>(cg->is_open()));
@@ -290,7 +165,7 @@ namespace mrv
             title->labelsize(12);
 
             auto mW = new Widget< PopupMenu >(
-                g->x() + 10, Y, g->w() - 20, 20, _("None"));
+                g->x() + 10, Y, g->w() - 20, 30, _("None"));
             PopupMenu* m = r.sourceMenu = mW;
             m->disable_submenus();
             m->labelsize(12);
@@ -302,36 +177,202 @@ namespace mrv
                     if (o->size() < 3)
                         return;
                     const Fl_Menu_Item* item = o->mvalue();
-                    if (!item)
+                    if (!item || !item->label())
                         return;
-                    _open_ndi(item);
+                    _ndi_input(item);
                 });
+
             
+            auto context = App::app->getContext();
+            auto NDISystem = context->getSystem<ndi::System>();
+            
+            r.deviceObserver =
+                observer::ListObserver<device::DeviceInfo>::create(
+                        NDISystem->observeDeviceInfo(),
+                        [this](const std::vector<device::DeviceInfo>& devices)
+                            {
+                                MRV2_R();
+
+                                r.sourceMenu->clear();
+                                r.sourceMenu->add(_("None"));
+                                
+                                for (auto& device : devices)
+                                {
+                                    r.sourceMenu->add(device.name.c_str());
+                                }
+                                r.sourceMenu->menu_end();
+                                r.sourceMenu->redraw();
+                            });
+
             mW = new Widget< PopupMenu >(
                 g->x() + 10, Y, g->w() - 20, 20, _("Fast Format"));
-            m = r.bestFormatMenu = mW;
+            m = r.inputFormatMenu = mW;
             m->disable_submenus();
             m->labelsize(12);
             m->align(FL_ALIGN_CENTER | FL_ALIGN_CLIP);
             m->add(_("Fast Format"));
             m->add(_("Best Format"));
-            m->value(0);
+            val = settings->getValue<int>("NDI/Input/Format");
+            m->value(val);
+            mW->callback([=](auto b)
+                {
+                    int value = b->value();
+                    settings->setValue("NDI/Input/Format", value);
+                });
 
             mW = new Widget< PopupMenu >(
                 g->x() + 10, Y, g->w() - 20, 20, _("With Audio"));
-            m = r.audioMenu = mW;
+            m = r.inputAudioMenu = mW;
             m->disable_submenus();
             m->labelsize(12);
             m->align(FL_ALIGN_CENTER | FL_ALIGN_CLIP);
             m->add(_("With Audio"));
             m->add(_("Without Audio"));
-            m->value(0);
-            
-            r.find.awake = false;
+            val = settings->getValue<int>("NDI/Input/Audio");
+            m->value(val);
+            mW->callback([=](auto b)
+                {
+                    int value = b->value();
+                    settings->setValue("NDI/Input/Audio", value);
+                });
 
             cg->end();
 
-            std::string key = prefix + "NDI";
+            std::string key = prefix + "NDI Input";
+            value = settings->getValue<std::any>(key);
+            open = std_any_empty(value) ? 1 : std_any_cast<int>(value);
+            if (!open)
+            {
+                cg->close();
+            }
+
+            cg = new CollapsibleGroup(g->x(), Y, g->w(), 20, _("Output"));
+            cg->spacing(2);
+            b = cg->button();
+            b->labelsize(14);
+            b->size(b->w(), 18);
+            b->callback(
+                [](Fl_Widget* w, void* d)
+                {
+                    CollapsibleGroup* cg = static_cast<CollapsibleGroup*>(d);
+                    if (cg->is_open())
+                        cg->close();
+                    else
+                        cg->open();
+
+                    const std::string& prefix = ndiPanel->tab_prefix();
+                    const std::string key = prefix + "NDI Output";
+
+                    auto settings = App::app->settings();
+                    settings->setValue(key, static_cast<int>(cg->is_open()));
+                },
+                cg);
+
+            cg->begin();
+
+            auto bW = new Widget<ToggleButton>(
+                g->x() + 10, Y, g->w() - 20, 30, _("Start streaming"));
+            bW->align(FL_ALIGN_CENTER);
+            bW->labelsize(12);
+            bW->selection_color(FL_YELLOW);
+            bW->callback(
+                [=](auto b)
+                    {
+                        _ndi_output(b);
+                    });
+
+            mW = new Widget< PopupMenu >(
+                g->x() + 10, Y, g->w() - 20, 20, _("Fast Format"));
+            m = r.outputFormatMenu = mW;
+            m->disable_submenus();
+            m->labelsize(12);
+            m->align(FL_ALIGN_CENTER | FL_ALIGN_CLIP);
+            m->add(_("Fast Format"));
+            m->add(_("Best Format"));
+            for (const auto& i : tl::device::getPixelTypeLabels())
+            {
+                // \@todo: 10 and 12 bit formats are not supported by NDI?
+                if (i == "None" || i.substr(0, 2) == "12" ||
+                    i.substr(0, 2) == "10")
+                    continue;
+                // \@bug: This one is broken in NDI's SDK.
+                if (i == "8BitI420")
+                    continue;
+#ifndef TLRENDER_NDI_ADVANCED
+                if (i.substr(0, 2) == "16")
+                    continue;
+#endif
+                m->add(i.c_str());
+            }
+            val = settings->getValue<int>("NDI/Output/Format");
+            m->value(val);
+            mW->callback([=](auto b)
+                {
+                    int value = b->value();
+                    settings->setValue("NDI/Output/Format", value);
+                    
+                    device::PixelType pixelType = _ndi_fourCC(value);
+                
+                    auto outputDevice = App::app->outputDevice();
+                    if (!outputDevice)
+                        return;
+
+                    auto config = outputDevice->getConfig();
+                    config.pixelType = pixelType;
+                    outputDevice->setConfig(config);
+                });
+
+            mW = new Widget< PopupMenu >(
+                g->x() + 10, Y, g->w() - 20, 20, _("With Audio"));
+            m = r.outputAudioMenu = mW;
+            m->disable_submenus();
+            m->labelsize(12);
+            m->align(FL_ALIGN_CENTER | FL_ALIGN_CLIP);
+            m->add(_("With Audio"));
+            m->add(_("Without Audio"));
+            val = settings->getValue<int>("NDI/Output/Audio");
+            m->value(val);
+            mW->callback([=](auto b)
+                {
+                    int value = b->value();
+                    settings->setValue("NDI/Output/Audio", value);
+                    
+                    auto outputDevice = App::app->outputDevice();
+                    if (!outputDevice)
+                        return;
+
+                    auto config = outputDevice->getConfig();
+                    config.noAudio = value;
+                    outputDevice->setConfig(config);
+                });
+
+            mW = new Widget< PopupMenu >(
+                g->x() + 10, Y, g->w() - 20, 20, _("With Metadata"));
+            m = r.outputMetadataMenu = mW;
+            m->disable_submenus();
+            m->labelsize(12);
+            m->align(FL_ALIGN_CENTER | FL_ALIGN_CLIP);
+            m->add(_("With Metadata"));
+            m->add(_("Without Metadata"));
+            val = settings->getValue<int>("NDI/Output/Metadata");
+            m->value(val);
+            mW->callback([=](auto b)
+                {
+                    int value = b->value();
+                    settings->setValue("NDI/Output/Metadata", value);
+                    
+                    auto outputDevice = App::app->outputDevice();
+                    if (!outputDevice)
+                        return;
+
+                    auto config = outputDevice->getConfig();
+                    config.noMetadata = value;
+                    outputDevice->setConfig(config);
+                });
+            
+            cg->end();
+
+            key = prefix + "NDI Output";
             value = settings->getValue<std::any>(key);
             open = std_any_empty(value) ? 1 : std_any_cast<int>(value);
             if (!open)
@@ -340,7 +381,77 @@ namespace mrv
             }
         }
 
-        void NDIPanel::_open_ndi(const Fl_Menu_Item* item)
+        void NDIPanel::_ndi_output(ToggleButton* b)
+        {
+            MRV2_R();
+            
+            SettingsObject* settings = App::app->settings();
+            
+            if (!App::ui->uiView->getTimelinePlayer())
+            {
+                b->value(0);
+                b->redraw();
+                return;
+            }
+                    
+            if (!b->value())
+            {
+                
+                App::app->beginNDIOutputStream();
+
+                
+                const Fl_Menu_Item* item = r.outputFormatMenu->mvalue();
+                if (!item || !item->label())
+                    return;
+                
+                int fltk_value = r.outputFormatMenu->value();
+                settings->setValue("NDI/Output/Format", fltk_value);
+
+                device::PixelType pixelType = _ndi_fourCC(fltk_value);
+                    
+                const Fl_Menu_Item* audioItem = r.outputAudioMenu->mvalue();
+                if (!audioItem || !audioItem->label())
+                    return;
+                
+                int noAudio = r.outputAudioMenu->value();
+                settings->setValue("NDI/Output/Audio", noAudio);
+                
+                int noMetadata = r.outputMetadataMenu->value();
+                
+                device::DeviceConfig config;
+                config.deviceIndex = 0;
+                config.displayModeIndex = 0;
+                config.pixelType = pixelType;
+                config.noAudio = noAudio;
+                config.noMetadata = noMetadata;
+                
+                
+                std::string format = item->label();
+                
+                const std::string msg =
+                    string::Format(_("Streaming {0} {1}...")).
+                    arg(config.pixelType).
+                    arg(audioItem->label());
+                LOG_STATUS(msg);
+                            
+                auto outputDevice = App::app->outputDevice();
+                if (!outputDevice)
+                    return;
+                outputDevice->setConfig(config);
+                b->copy_label(_("Stop streaming"));
+                b->value(1);
+                b->redraw();
+            }
+            else
+            {
+                App::app->endNDIOutputStream();
+                b->copy_label(_("Start streaming"));
+                b->value(0);
+                b->redraw();
+            }
+        }
+        
+        void NDIPanel::_ndi_input(const Fl_Menu_Item* item)
         {
             TLRENDER_P();
             MRV2_R();
@@ -352,8 +463,10 @@ namespace mrv
                 return;
 
             if (!r.lastStream.empty())
-                LOG_INFO("Close stream " << r.lastStream);
+                LOG_STATUS("Close stream " << r.lastStream);
 
+            r.cacheInfoObserver.reset();
+            
             auto model = p.ui->app->filesModel();
             if (model)
             {
@@ -361,13 +474,6 @@ namespace mrv
                 if (aItem && file::isTemporaryNDI(aItem->path))
                     model->close();
             }
-
-            // Windows has weird items called REMOTE CONNECTION.
-            // We don't allow selecting them.
-            const std::regex pattern(
-                "remote connection", std::regex_constants::icase);
-            if (std::regex_search(sourceName, pattern))
-                return;
 
             r.lastStream = sourceName;
 
@@ -379,9 +485,9 @@ namespace mrv
 
             ndi::Options options;
             options.sourceName = sourceName;
-            options.bestFormat = r.bestFormatMenu->value();
-            options.noAudio    = r.audioMenu->value();
-
+            options.bestFormat = r.inputFormatMenu->value();
+            options.noAudio = r.inputAudioMenu->value();
+            
             nlohmann::json j;
             j = options;
 
@@ -389,7 +495,7 @@ namespace mrv
             s << j << std::endl;
             s.close();
 
-            LOG_INFO("Opened stream " << sourceName);
+            LOG_STATUS("Opened stream " << sourceName);
 
             open_file_cb(ndiFile, p.ui);
 
@@ -398,8 +504,11 @@ namespace mrv
                 return;
 
             int seconds = 4;
-            r.play.found = !options.noAudio;
+            r.play.running = options.noAudio;
+
             player->stop();
+            player->start();
+            player->clearCache();
 
             if (!options.noAudio)
             {
@@ -408,43 +517,86 @@ namespace mrv
                         player->player()->observeCacheInfo(),
                         [this, player,
                          options](const timeline::PlayerCacheInfo& value)
+                        {
+                            MRV2_R();
+                            auto startTime = player->currentTime();
+                            auto endTime =
+                                startTime + options.audioBufferSize.rescaled_to(
+                                                startTime.rate());
+
+                            for (const auto& t : value.audioFrames)
                             {
-                                MRV2_R();
-                                auto startTime = player->currentTime();
-                                auto endTime =
-                                    startTime + options.audioBufferSize.rescaled_to(
-                                        startTime.rate());
-                                
-                                for (const auto& t : value.audioFrames)
+                                if (t.start_time() <= startTime &&
+                                    t.end_time_exclusive() >= endTime)
                                 {
-                                    if (t.start_time() <= startTime &&
-                                        t.end_time_exclusive() >= endTime)
-                                    {
-                                        r.play.found = true;
-                                        r.cacheInfoObserver.reset();
-                                        break;
-                                    }
+                                    r.play.running = true;
+                                    break;
                                 }
-                            },
-                        observer::CallbackAction::Suppress);
+                            }
+                        });
+                
+                r.play.thread = std::thread(
+                    [this, player, seconds]
+                        {
+                            MRV2_R();
+                            auto start = std::chrono::steady_clock::now();
+                            while (!r.play.running &&
+                                   std::chrono::steady_clock::now() - start <=
+                                   std::chrono::seconds(seconds))
+                            {
+                            }
+                            r.cacheInfoObserver.reset();
+                            player->forward();
+                        });
+
+                // This thread will only run for 4 seconds.
+                r.play.thread.detach();
+            }
+            else
+            {
+                player->forward();
+            }
+
+        }
+        
+        device::PixelType  NDIPanel::_ndi_fourCC(int fltk_value)
+        {
+            MRV2_R();
+            
+            const Fl_Menu_Item* item = r.outputFormatMenu->mvalue();
+            const std::string format = item->label();
+
+            
+            if (format == _("Best Format"))
+            {
+#ifdef TLRENDER_NDI_ADVANCED
+                return device::PixelType::_16BitPA16;
+#else
+#    ifdef __APPLE__
+                return device::PixelType::_8BitBGRA;
+#    else
+                return device::PixelType::_8BitRGBA;
+#    endif
+#endif
+            }
+            else if (format == _("Fast Format"))
+            {
+                return device::PixelType::_8BitUYVA;
+            }
+
+            int idx = -1;
+                
+            for (const auto& label :
+                     tl::device::getPixelTypeLabels())
+            {
+                ++idx;
+                if (label == format)
+                    break;
             }
             
-            r.play.thread = std::thread(
-                [this, player, seconds]
-                {
-                    MRV2_R();
-                    auto start = std::chrono::steady_clock::now();
-                    while (!r.play.found &&
-                           std::chrono::steady_clock::now() - start <=
-                               std::chrono::seconds(seconds))
-                    {
-                    }
-                    player->forward();
-                });
-
-            r.play.thread.detach();
+            return static_cast<device::PixelType>(idx);
         }
-
+        
     } // namespace panel
 
 } // namespace mrv

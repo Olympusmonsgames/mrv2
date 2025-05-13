@@ -134,7 +134,7 @@ std::string Flu_File_Chooser::createFolderErrTxt =
     _("Could not create directory '%s'. You may not have permission to "
     "perform this operation.");
 std::string Flu_File_Chooser::deleteFileErrTxt =
-    _("An error ocurred while trying to delete '%s'. %s");
+    _("An error occurred while trying to delete '%s'. %s");
 std::string Flu_File_Chooser::fileExistsErrTxt = _("File '%s' already exists!");
 std::string Flu_File_Chooser::renameErrTxt = _("Unable to rename '%s' to '%s'");
 
@@ -2731,6 +2731,8 @@ std::string Flu_File_Chooser::formatDate(const char* d)
         month = 10;
     else if (strcmp(MM, _("Nov")) == 0)
         month = 11;
+    else if (strcmp(MM, _("Dec")) == 0)
+        month = 11;
     else
         month = 12;
 
@@ -2887,7 +2889,7 @@ void Flu_File_Chooser::locationCB(const char* path)
         std::string s = mycomp;
         if (strstr(path, s.c_str()) == path)
         {
-            // seach for '(' and if present, extract the drive name and cd to it
+            // search for '(' and if present, extract the drive name and cd to it
             char* paren = const_cast<char*>(strrchr(path, '('));
             if (paren)
             {

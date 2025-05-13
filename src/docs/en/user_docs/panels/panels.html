@@ -1,25 +1,23 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Panels &mdash; mrv2 v1.2.7 documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
-      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
-      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=fd3f3429" />
+  <title>Panels &mdash; mrv2 v1.3.5 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/graphviz.css?v=4ae1632d" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../../_static/documentation_options.js?v=5ec1dc68"></script>
-        <script src="../../_static/doctools.js?v=9a2dae69"></script>
-        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=bc949842"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
@@ -80,6 +78,8 @@
 <li class="toctree-l2"><a class="reference internal" href="../preferences.html">Preferences</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../saving.html">Saving</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../videos.html">Video Tutorials</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../command-line.html">Command-line Switches and Parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../hdr.html">HDR</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../faq.html">FAQ</a></li>
 </ul>
 </li>
@@ -177,15 +177,17 @@ Horizontal, Vertical and Tile.  The Tile comparison allows multiple images to be
 <section id="network-panel">
 <h2>Network Panel<a class="headerlink" href="#network-panel" title="Link to this heading"></a></h2>
 <img alt="../../_images/network-panel-01.png" class="align-center" src="../../_images/network-panel-01.png" />
-<p>The Network Panel allows you to start a sync session between two or more machines.  For it to work, you must set one of the machine as a server and the other machines as clients that connect to that machine.  The machines are distinguised by their IPv4 or IPv6 address or their host alias names if you use a hosts file on your OS.  In addition to the machine, you need to specify a port number to connect to, but the default port number should be fine.</p>
+<p>The Network Panel allows you to start a sync session between two or more machines.  For it to work, you must set one of the machine as a server and the other machines as clients that connect to that machine.  The machines are distinguished by their IPv4 or IPv6 address or their host alias names if you use a hosts file on your OS.  In addition to the machine, you need to specify a port number to connect to, but the default port number should be fine.</p>
 <p>For the connection to take place, you need to make sure your firewall allows incoming and outgoing connections to the port you set up.</p>
 </section>
 <section id="ndi-panel">
 <h2>NDI Panel<a class="headerlink" href="#ndi-panel" title="Link to this heading"></a></h2>
 <img alt="../../_images/ndi-panel-01.png" class="align-center" src="../../_images/ndi-panel-01.png" />
-<p>The NDI Panel allows you to play back an NDI® stream (ie. a video and audio playback stream) from anywhere on your network using the Network Device Interfacce protocol.</p>
+<p>The NDI Panel allows you to play back an NDI® stream (ie. a video and audio playback stream) from anywhere on your network using the Network Device Interface protocol.</p>
 <p>For the connection to take place, you need to make sure your firewall allows incoming and outgoing connections.  For more information, refer to the NDI® SDK documentation.</p>
-<p>The pulldown allows you to select the source to play.</p>
+<p>The pulldown allows you to select the source to play.  Note that starting of playback of NDI® in mrv2 is currently a tad slow, as it needs to cache the video thumbnails and audio first.</p>
+<p>In v1.3.5 and later, NDI® Video and Audio output was also added.  This allows you to stream the contents of what’s playing in mrv2 to any NDI® compatible device or software (like NDI® Tools Studio Monitor on Windows or NDI® Tools Video Monitor on macOS or other instance of mrv2 itself).</p>
+<p>NDI® is a registered trademark of Vizrt NDI AB.</p>
 </section>
 <section id="playlist-panel">
 <h2>Playlist Panel<a class="headerlink" href="#playlist-panel" title="Link to this heading"></a></h2>

@@ -49,7 +49,7 @@ mrv2 can be customized to show any of the toolbars from **Window->Preferences->U
 Mouse interaction in the Viewer
 -------------------------------
 
-A three buttoned mouse can be used for closer image inspection. Hold the middle button and drag to pan the image within the viewport. Hold down the Alt key on your keyboard and drag left/right with the right mouse button to perform a centred zoom in/out on the image.  You can also use the mousewheel which is more confortable.
+A three buttoned mouse can be used for closer image inspection. Hold the middle button and drag to pan the image within the viewport. Hold down the Alt key on your keyboard and drag left/right with the right mouse button to perform a centred zoom in/out on the image.  You can also use the mousewheel which is more comfortable.
 The current zoom factor is shown on the pixel toolbar to the left.
 
 .. note::
@@ -205,7 +205,7 @@ The Render menu provides controls for modifying the rendering of the image on th
 
 .. topic:: Alpha Blend
 
-   You can select how the alpha channel is handled when the image or video has one.  You can choose between None, Straight or Premultiplied.
+   You can select how the alpha channel is handled when the image or video has one.  You can choose between None, Straight or Premultiplied.  OpenEXR images should, normally, be comped Premultiplied.
       
 .. topic:: Minify and Magnify Filters
 
@@ -230,7 +230,7 @@ The playback menu holds the standard playback functions that work just like the 
 	   
 .. topic:: Annotation/Clear, Annotation/Clear All
 	   
-	   With these commands, once one or more annotations have been created, you will be able to clear the annotation on the current frame or all the annoations on the timeline.
+	   With these commands, once one or more annotations have been created, you will be able to clear the annotation on the current frame or all the annotations on the timeline.
 
 Timeline Menu
 +++++++++++++
@@ -256,7 +256,7 @@ The Timeline menu provides controls for modifying the timeline viewport at the b
 .. topic:: Transitions
 
    With this on, you can show audio and video transitions in .otio files.
-   (Currently not implemented in v1.2.7).
+   (Currently not implemented in v1.3.5).
 
 .. topic:: Markers
 

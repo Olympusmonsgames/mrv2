@@ -107,5 +107,19 @@ RMDir $INSTDIR
 FunctionEnd
 
 Section "un.DelKeys"
+
+;
+; Remove Firewall settings
+;
+nsExec::Exec 'netsh advfirewall firewall delete rule name="${mrv2_KEY}"'
+nsExec::Exec 'netsh advfirewall firewall delete rule name="${hdr_KEY}"'
+
+;
+; Remove he hard-links
+;
+Delete "$INSTDIR\bin\${mrv2_KEY}"
+Delete "$INSTDIR\bin\${hdr_KEY}"
+  
+
 Call un.BorrarKeys
 SectionEnd

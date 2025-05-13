@@ -4,7 +4,9 @@
 
 #pragma once
 
-#include <iostream>
+#include <memory>
+
+#include <tlCore/Util.h>
 
 #include "mrvDropWindow.h"
 
@@ -38,7 +40,7 @@ namespace mrv
         void update_title_bar();
 
         //! Make window appear always on top of others
-        void always_on_top(int above);
+        void always_on_top(int above, bool synthetic = false);
 
         //! Returns whether the window is on top of all others.
         bool is_on_top() const { return on_top; }
@@ -52,19 +54,46 @@ namespace mrv
         //! Handle override.
         int handle(int e) FL_OVERRIDE;
 
+        //! Draw override.
+        void draw() FL_OVERRIDE;
+
+        //! Show override.
+        void show() FL_OVERRIDE;
+
         //! Resize override to handle tile.
         void resize(int X, int Y, int W, int H) FL_OVERRIDE;
 
         //! Return whether we are resizing under wayland.
         bool is_wayland_resize() const { return wayland_resize; }
-        
+
+        //! Set the window's opacity to a value between 0 and 255.
+        void set_alpha(int alpha);
+
+        //! Return the window's opacity (value between 0 and 255).
+        int get_alpha() const { return win_alpha; }
+
+        //! Allow click through behavior on the window
+        void set_click_through(bool value);
+
+        //! Return the Window's click through state.
+        bool get_click_through() const { return click_through; };
+
     protected:
+        void setClickThrough(bool value);
+
 #ifdef __APPLE__
+        void set_window_transparency(double alpha);
+
         IOPMAssertionID assertionID;
         IOReturn success;
 #endif
+        int win_alpha = 255;
+        bool ignoreFocus = false;
         bool wayland_resize = false;
         bool on_top = false;
+        bool click_through = false;
+
+        TLRENDER_PRIVATE();
     };
 
 } // namespace mrv

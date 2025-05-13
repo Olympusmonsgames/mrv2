@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <tlBaseApp/BaseApp.h>
+#include <mrvBaseApp/mrvBaseApp.h>
 
 #include <tlTimeline/PlayerOptions.h>
 #include <tlTimeline/IRender.h>
@@ -21,22 +21,29 @@ namespace
 
 class ViewerUI;
 
+namespace tl
+{
+    namespace device
+    {
+        class IOutput;
+        class DevicesModel;
+        class DeviceConfig;
+    } // namespace device
+} // namespace tl
+
 namespace mrv
 {
     using namespace tl;
 
-    class OutputDevice;
-
     struct Playlist;
 
     class TimeObject;
-    class DevicesModel;
     class FilesModel;
     class PlaylistsModel;
     class SettingsObject;
 
     //! Application.
-    class App : public tl::app::BaseApp
+    class App : public app::BaseApp
     {
         TLRENDER_NON_COPYABLE(App);
 
@@ -70,10 +77,20 @@ namespace mrv
         const timeline::DisplayOptions& displayOptions() const;
 
         //! Get the output device.
-        OutputDevice* outputDevice() const;
+        const std::shared_ptr<device::IOutput>& outputDevice() const;
 
         //! Get the devices model.
-        const std::shared_ptr<DevicesModel>& devicesModel() const;
+        const std::shared_ptr<device::DevicesModel>& devicesModel() const;
+
+#ifdef TLRENDER_NDI
+        void beginNDIOutputStream();
+        void endNDIOutputStream();
+#endif
+
+#ifdef TLRENDER_BMD
+        void beginBMDOutputStream();
+        void endBMDOutputStream();
+#endif
 
         //! Create a new application.
         static std::shared_ptr<App>
@@ -160,6 +177,7 @@ namespace mrv
         //! Update the cache (Darby makes this private and uses an observer
         //! with a string, but I think it is simpler to make it public).
         void cacheUpdate();
+        void timerUpdate();
 
     public:
         static ViewerUI* ui;
@@ -181,6 +199,11 @@ namespace mrv
         void _layersUpdate(const std::vector<int>& value);
 
         void _audioUpdate();
+
+        static void _timer_update_cb(App*);
+
+        void _startOutputDeviceTimer();
+        void _stopOutputDeviceTimer();
 
         std::shared_ptr<timeline::Timeline>
         _createTimeline(const std::shared_ptr<FilesModelItem>& item);

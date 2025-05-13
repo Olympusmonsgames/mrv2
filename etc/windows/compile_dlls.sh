@@ -6,7 +6,7 @@
 . etc/windows/windows_prepare.sh
 
 #
-# Install libintl, iconv and gettext, subversion, libsqlite
+# Install libintl, iconv and gettext, subversion, libsqlite and swig
 # from MSys repositories
 #
 . bin/compile/install_libintl_windows.sh
@@ -16,7 +16,3 @@
 #
 . bin/compile/compile_ffmpeg_deps_windows.sh 
 
-#
-# Deal with libcms2 (compile from source)
-#
-. bin/compile/compile_liblcms2_windows.sh

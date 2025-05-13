@@ -88,13 +88,9 @@ namespace mrv
         static std::vector<UndoRedo> undoBuffer;
         static std::vector<UndoRedo> redoBuffer;
 
-        std::vector<Composition*> getTracks(TimelinePlayer* player)
+        std::vector<Composition*> getTracks(otio::Timeline* timeline)
         {
             std::vector<Composition*> out;
-
-            otio::ErrorStatus errorStatus;
-            auto timeline = player->getTimeline();
-
             auto tracks = timeline->tracks()->children();
             for (auto child : tracks)
             {
@@ -105,6 +101,12 @@ namespace mrv
                 out.push_back(composition);
             }
             return out;
+        }
+
+        std::vector<Composition*> getTracks(TimelinePlayer* player)
+        {
+            auto timeline = player->getTimeline();
+            return getTracks(timeline);
         }
 
         RationalTime getTime(TimelinePlayer* player)
@@ -746,7 +748,7 @@ namespace mrv
     file::Path getRelativePath(const file::Path& path, const fs::path& fileName)
     {
         fs::path filePath = path.get();
-        // Make file absolue, then remove it, leaving directory
+        // Make file absolute, then remove it, leaving directory
         fs::path directory = fs::absolute(fileName).parent_path();
         fs::path relative = fs::relative(filePath, directory);
         std::string file = relative.generic_string();
@@ -921,7 +923,7 @@ namespace mrv
             // Cut again at current time + 1 frame
             otio::algo::slice(track, out_time);
 
-            // Adjust time by almsot half a frame to avoid rounding issues in
+            // Adjust time by almost half a frame to avoid rounding issues in
             // the audio tracks.
             auto trackTime = time + half_frame;
 
@@ -1185,7 +1187,7 @@ namespace mrv
 
         for (auto track : tracks)
         {
-            // Adjust time by almsot half a frame to avoid rounding issues in
+            // Adjust time by almost half a frame to avoid rounding issues in
             // the audio tracks.
             auto trackTime = time + half_frame;
 
@@ -2663,6 +2665,171 @@ namespace mrv
         set_edit_mode_cb(editMode, ui);
     }
 
+    bool replaceClipPath(tl::file::Path clipPath, ViewerUI* ui)
+    {
+        auto view = ui->uiView;
+        auto player = view->getTimelinePlayer();
+        if (!player)
+            return false;
+
+        auto timeline = player->getTimeline();
+        if (!timeline)
+        {
+            LOG_ERROR("No timeline in player");
+            return false;
+        }
+
+        const auto& time = getTime(player);
+        auto compositions = getTracks(player);
+
+        otio::ErrorStatus errorStatus;
+        otio::Clip* clip = nullptr;
+        int clipIndex = -1;
+        for (auto composition : compositions)
+        {
+            auto track = dynamic_cast<otio::Track*>(composition);
+            if (!track)
+                continue;
+
+            // Find first video track
+            if (track->kind() != otio::Track::Kind::video)
+                continue;
+
+            clip = otio::dynamic_retainer_cast<Clip>(
+                track->child_at_time(time, &errorStatus));
+            if (!clip)
+                continue;
+
+            clipIndex = track->index_of_child(clip);
+            break;
+        }
+
+        if (clipIndex < 0 || !clip)
+            return false;
+
+        auto media = clip->media_reference();
+        if (auto ref = dynamic_cast<otio::ExternalReference*>(media))
+        {
+            ref->set_target_url(clipPath.get());
+        }
+        else if (auto ref = dynamic_cast<otio::ImageSequenceReference*>(media))
+        {
+            ref->set_target_url_base(clipPath.getDirectory());
+            ref->set_name_prefix(clipPath.getBaseName());
+        }
+        else
+        {
+            LOG_ERROR(_("Unknown media reference"));
+            return false;
+        }
+
+        makePathsAbsolute(timeline, ui);
+
+        toOtioFile(timeline, ui);
+
+        refresh_file_cache_cb(nullptr, ui);
+
+        return true;
+    }
+
+    //! Get Active Tracks.
+    bool getActiveTracks(
+        std::vector<std::string>& tracks, std::vector<bool>& tracksActive,
+        ViewerUI* ui)
+    {
+        auto view = ui->uiView;
+        auto player = view->getTimelinePlayer();
+        if (!player)
+            return false;
+
+        auto timeline = player->getTimeline();
+        if (!timeline)
+        {
+            LOG_ERROR("No timeline in player");
+            return false;
+        }
+
+        auto compositions = getTracks(player);
+
+        otio::ErrorStatus errorStatus;
+        otio::Clip* clip = nullptr;
+        unsigned trackIndex = 0;
+        for (auto composition : compositions)
+        {
+            auto track = dynamic_cast<otio::Track*>(composition);
+            if (!track)
+                continue;
+
+            ++trackIndex;
+
+            const std::string name = tl::string::Format(_("Track #{0} - {1}"))
+                                         .arg(trackIndex)
+                                         .arg(track->name());
+
+            bool active = track->enabled();
+
+            tracks.push_back(name);
+            tracksActive.push_back(active);
+        }
+
+        return true;
+    }
+
+    bool toggleTrack(unsigned trackIndex, ViewerUI* ui)
+    {
+        auto view = ui->uiView;
+        auto player = view->getTimelinePlayer();
+        if (!player)
+            return false;
+
+        auto timeline = player->getTimeline();
+        if (!timeline)
+        {
+            LOG_ERROR("No timeline in player");
+            return false;
+        }
+
+        const auto& time = getTime(player);
+        auto compositions = getTracks(player);
+
+        std::vector<int> audioMutedTracks;
+        otio::ErrorStatus errorStatus;
+        unsigned index = 0;
+        for (auto composition : compositions)
+        {
+            auto track = dynamic_cast<otio::Track*>(composition);
+            if (!track)
+                continue;
+
+            if (trackIndex != index)
+            {
+                ++index;
+                continue;
+            }
+
+            bool enabled = track->enabled();
+            enabled ^= true;
+            track->set_enabled(enabled);
+
+            if (track->kind() == otio::Track::Kind::audio)
+            {
+                audioMutedTracks.push_back(!enabled);
+            }
+            break;
+        }
+
+        player->player()->setChannelMute(audioMutedTracks);
+
+        makePathsAbsolute(timeline, ui);
+
+        updateTimeline(timeline, time, ui);
+        toOtioFile(timeline, ui);
+
+        refresh_file_cache_cb(nullptr, ui);
+
+        return true;
+    }
+
     /// @todo: REFACTOR THIS PLEASE
     EditMode editMode = EditMode::kTimeline;
     int editModeH = 30;
@@ -2763,6 +2930,9 @@ namespace mrv
         {
             if (const auto* track = dynamic_cast<otio::Track*>(child.value))
             {
+                if (!track->enabled())
+                    continue;
+
                 bool visibleTrack = false;
                 if (otio::Track::Kind::video == track->kind())
                 {

@@ -26,16 +26,22 @@ namespace mrv
         // GL variables
         //! OpenGL Offscreen buffers
         image::PixelType colorBufferType = image::PixelType::RGBA_F32;
+
+        std::shared_ptr<timeline_gl::Render> render;
         std::shared_ptr<tl::gl::OffscreenBuffer> buffer;
         std::shared_ptr<tl::gl::OffscreenBuffer> stereoBuffer;
         std::shared_ptr<tl::gl::OffscreenBuffer> annotation;
-        std::shared_ptr<timeline_gl::Render> render;
+        std::shared_ptr<tl::image::Image> annotationImage; // only used on APPLE
+        std::shared_ptr<tl::gl::OffscreenBuffer> overlay;
         std::shared_ptr<gl::Shader> shader;
         std::shared_ptr<gl::Shader> annotationShader;
-        std::shared_ptr<gl::Shader> stereoShader;
-        int index = 0;
-        int nextIndex = 1;
-        GLuint pboIds[2];
+
+        int currentPBOIndex = 0;
+        int nextPBOIndex = 1;
+        GLuint pboIDs[2] = {0, 0};
+        GLsync pboFences[2] = {0, 0};
+        GLuint overlayPBO = 0;
+        GLsync overlayFence;
         std::shared_ptr<gl::VBO> vbo;
         std::shared_ptr<gl::VAO> vao;
 
@@ -44,9 +50,7 @@ namespace mrv
 #endif
         std::shared_ptr<opengl::Lines> lines;
 
-#ifdef TLRENDER_API_GL_4_1_Debug
         bool init_debug = false;
-#endif
     };
 
 //! Define a variable, "gl", that references the private implementation.

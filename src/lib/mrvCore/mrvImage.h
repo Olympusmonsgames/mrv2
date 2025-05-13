@@ -4,49 +4,115 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring> // For memcpy
+
+#include <Imath/half.h>
+
 namespace mrv
 {
-
     inline void flipImageInY(
         uint8_t* pixels, const size_t width, const size_t height,
         const int depth)
     {
         const size_t rowSize = width * depth;
+        uint8_t* tempRow =
+            new uint8_t[rowSize]; // Temporary buffer for row swapping
+
         for (size_t y = 0; y < height / 2; ++y)
         {
-            const size_t topRow = y * rowSize;
-            const size_t bottomRow = (height - y - 1) * rowSize;
+            uint8_t* topRow = pixels + y * rowSize;
+            uint8_t* bottomRow = pixels + (height - y - 1) * rowSize;
 
-            for (size_t i = 0; i < rowSize; ++i)
+            // Swap entire rows using memcpy
+            std::memcpy(tempRow, topRow, rowSize);
+            std::memcpy(topRow, bottomRow, rowSize);
+            std::memcpy(bottomRow, tempRow, rowSize);
+        }
+
+        delete[] tempRow; // Free the temporary buffer
+    }
+
+    inline void flipImageInY(
+        uint8_t* outputPixels, const uint8_t* inputPixels, const size_t width,
+        const size_t height, const int inDepth, const int outDepth)
+    {
+        const size_t inputRowSize = width * inDepth;
+        memset(outputPixels, 0, width * height * outDepth);
+
+        for (size_t y = 0; y < height; ++y)
+        {
+            const size_t inputRow = y * inputRowSize;
+            const size_t outputRow = (height - y - 1) * width * outDepth;
+
+            for (size_t x = 0; x < width; ++x)
             {
-                const uint8_t temp = pixels[topRow + i];
-                pixels[topRow + i] = pixels[bottomRow + i];
-                pixels[bottomRow + i] = temp;
+                for (int c = 0; c < outDepth; ++c)
+                {
+                    const size_t inputIdx = inputRow + x * inDepth + c;
+                    const size_t outputIdx = outputRow + x * outDepth + c;
+
+                    const float tmp =
+                        static_cast<float>(inputPixels[inputIdx]) / 255.0f;
+                    outputPixels[outputIdx] = static_cast<Imath::half>(tmp);
+                }
             }
         }
     }
 
     inline void flipImageInY(
-        uint8_t* outputPixels, const uint8_t* inputPixels, const size_t width,
-        const size_t height, const int depth)
+        float* outputPixels, const uint8_t* inputPixels, const size_t width,
+        const size_t height, const int inDepth, const int outDepth)
     {
-        // Calculate the size of a row of pixels (in bytes)
-        size_t rowSize = width * depth;
+        const size_t inputRowSize = width * inDepth;
+        memset(outputPixels, 0, width * height * outDepth * sizeof(float));
 
-        // Loop through half the image height
         for (size_t y = 0; y < height; ++y)
         {
-            // Calculate the indices of the rows in source and destination
-            // buffers
-            size_t topInputRow = y * rowSize;
-            size_t bottomInputRow = (height - y - 1) * rowSize;
-            size_t topOutputRow =
-                (height - y - 1) * rowSize; // Start from bottom in output
+            const size_t inputRow = y * inputRowSize;
+            const size_t outputRow = (height - y - 1) * width * outDepth;
 
-            // Copy a row from top to bottom in the output buffer
-            memcpy(
-                outputPixels + topOutputRow, inputPixels + topInputRow,
-                rowSize);
+            for (size_t x = 0; x < width; ++x)
+            {
+                for (int c = 0; c < outDepth; ++c)
+                {
+                    const size_t inputIdx = inputRow + x * inDepth + c;
+                    const size_t outputIdx = outputRow + x * outDepth + c;
+
+                    const float tmp =
+                        static_cast<float>(inputPixels[inputIdx]) / 255.0f;
+                    outputPixels[outputIdx] = static_cast<Imath::half>(tmp);
+                }
+            }
+        }
+    }
+
+    inline void flipImageInY(
+        Imath::half* outputPixels, const uint8_t* inputPixels,
+        const size_t width, const size_t height, const int inDepth,
+        const int outDepth)
+    {
+        const size_t inputRowSize = width * inDepth;
+        memset(outputPixels, 0, width * height * outDepth * sizeof(Imath::half));
+
+        for (size_t y = 0; y < height; ++y)
+        {
+            const size_t inputRow = y * inputRowSize;
+            const size_t outputRow = (height - y - 1) * width * outDepth;
+
+            for (size_t x = 0; x < width; ++x)
+            {
+                for (int c = 0; c < outDepth; ++c)
+                {
+                    const size_t inputIdx = inputRow + x * inDepth + c;
+                    const size_t outputIdx = outputRow + x * outDepth + c;
+
+                    const float tmp =
+                        static_cast<float>(inputPixels[inputIdx]) / 255.0f;
+                    outputPixels[outputIdx] = static_cast<Imath::half>(tmp);
+                }
+            }
         }
     }
 

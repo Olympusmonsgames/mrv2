@@ -69,6 +69,7 @@ set(HEADERS
     mrvTextDisplay.h
     mrvTimecode.h
     mrvTimelineGroup.h
+    mrvToggleButton.h
     mrvVectorscope.h
     mrvVersion.h
     mrvVolumeSlider.h
@@ -117,20 +118,49 @@ set(SOURCES
     mrvTimecode.cpp
     mrvTimelineGroup.cpp
     mrvTile.cpp
+    mrvToggleButton.cpp
     mrvVectorscope.cpp
     mrvVersion.cpp
     mrvVolumeSlider.cpp
 )
 
 
-list( APPEND LIBRARIES mrvFlmm mrvCore ${FLTK_LIBRARIES} ${FLTK_gl_LIBRARIES} ${JASPER_LIBRARIES} MINIZIP::minizip)
+list(APPEND LIBRARIES mrvFlmm mrvCore ${FLTK_LIBRARIES} ${FLTK_gl_LIBRARIES} ${JASPER_LIBRARIES} MINIZIP::minizip)
 
+set(DISTRO_VERSION "")
 if(UNIX AND NOT APPLE)
+    
+    execute_process(COMMAND lsb_release -ds OUTPUT_VARIABLE LSB_INFO OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REPLACE "\"" "" DISTRO_INFO "${LSB_INFO}")
+    
+    execute_process(COMMAND ${CMAKE_COMMAND} -E env -- echo "$ENV{XDG_SESSION_DESKTOP}" OUTPUT_VARIABLE DESKTOP_ENV OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(COMMAND uname -r OUTPUT_VARIABLE KERNEL_INFO OUTPUT_STRIP_TRAILING_WHITESPACE)
+    
     list(APPEND LIBRARIES OpenGL::OpenGL)
     if(TLRENDER_WAYLAND)
 	list(APPEND LIBRARIES OpenGL::EGL)
     endif()
+elseif(WIN32)
+    execute_process(
+	COMMAND powershell -Command "(Get-CimInstance Win32_OperatingSystem).Caption"
+	OUTPUT_VARIABLE DISTRO_INFO
+	OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    set(DESKTOP_ENV "Windows (GDI+)")
+    execute_process(COMMAND cmd /C ver OUTPUT_VARIABLE KERNEL_INFO OUTPUT_STRIP_TRAILING_WHITESPACE)
+elseif(APPLE)
+    execute_process(COMMAND sw_vers --productName
+	OUTPUT_VARIABLE DISTRO_INFO)
+    execute_process(COMMAND sw_vers --productVersion
+	OUTPUT_VARIABLE DISTRO_VERSION)
+    set(DESKTOP_ENV "Cocoa")
+    execute_process(COMMAND uname -r OUTPUT_VARIABLE KERNEL_INFO)
 endif()
+
+add_compile_definitions(kBUILD_DISTRO="${DISTRO_INFO}")
+add_compile_definitions(kBUILD_VERSION="${DISTRO_VERSION}")
+add_compile_definitions(kBUILD_KERNEL_INFO="${KERNEL_INFO}")
+add_compile_definitions(kBUILD_DESKTOP_ENV="${DESKTOP_ENV}")
 
 if(MRV2_PYBIND11)
     list( APPEND LIBRARIES pybind11::embed )
@@ -157,6 +187,10 @@ if (UNIX AND NOT APPLE)
     if (TLRENDER_X11)
 	list(APPEND LIBRARIES Xss )
     endif()
+endif()
+
+if(TLRENDER_LIBPLACEBO)
+    list(APPEND LIBRARIES libplacebo::libplacebo)
 endif()
 
 if(TLRENDER_NET)

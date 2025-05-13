@@ -12,8 +12,29 @@
 #
 
 
-
 . $PWD/etc/build_dir.sh
+
+rm -rf $BUILD_DIR/install/include/FL
+
+dir=$BUILD_DIR/deps/FLTK/src/FLTK-build/
+if [[ ! -d $dir ]]; then
+    echo "FLTK directory"
+    echo $dir
+    echo "does not exist. Please run:"
+    echo " $ runme.sh [sameflags]"
+    exit 1
+fi
+
+
+cd $dir
+
+#
+#  Rebuild latest FLTK
+#
+
+cmake --build . $FLAGS --config $CMAKE_BUILD_TYPE -t install
+
+cd -
 
 
 dir=$BUILD_DIR/tlRender/etc/SuperBuild/tlRender/src/tlRender-build/
@@ -29,26 +50,6 @@ cd $dir
 
 #
 #  Rebuild tlRender
-#
-cmake --build . $FLAGS --config $CMAKE_BUILD_TYPE -t install
-
-cd -
-
-rm -rf $BUILD_DIR/install/include/FL
-
-dir=$BUILD_DIR/deps/FLTK/src/FLTK-build/
-if [[ ! -d $dir ]]; then
-    echo "FLTK directory"
-    echo $dir
-    echo "does not exist. Please run:"
-    echo " $ runme.sh [sameflags]"
-    exit 1
-fi
-
-cd $dir
-
-#
-#  Rebuild FLTK
 #
 cmake --build . $FLAGS --config $CMAKE_BUILD_TYPE -t install
 

@@ -16,12 +16,10 @@ if [[ ! -e etc/build_dir.sh ]]; then
 fi
 
 NOARGS=1
-
 . etc/build_dir.sh
 
 locate_python
 
-echo $PYTHON_SITEDIR
 if [[ ! -e $PYTHON_SITEDIR/polib.py &&
 	  ! -e $PYTHON_USER_SITEDIR/polib.py ]];
 then
@@ -29,3 +27,8 @@ then
 fi
 
 $PYTHON bin/python/po_translate.py $*
+
+#
+# Remove all the dependencies we installed
+#
+$PYTHON -m pip uninstall -r requirements_useless.txt -y

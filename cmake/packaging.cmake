@@ -18,7 +18,9 @@ set( CPACK_PACKAGE_CONTACT "ggarra13@gmail.com")
 #
 # Experimental support in CPack for multithreading. 0 uses all cores.
 #
-if(NOT APPLE)
+if (APPLE)
+    set( CPACK_THREADS 1 )
+else()
     set( CPACK_THREADS 0 )
 endif()
 
@@ -69,6 +71,9 @@ set(MRV2_DIR ${CMAKE_SOURCE_DIR})
 #
 file(REAL_PATH "${MRV2_DIR}/.." MRV2_ROOT)
 
+set(CPACK_VERBOSE ON)
+set(CPACK_FILTER_IGNORE_FILES "/.git/;/build/;/CMakeFiles/;.o;.a;.lib")
+
 #
 # \@bug:
 # This dummy (empty) install script is needed so variables get passed to
@@ -83,19 +88,100 @@ set( CPACK_INSTALL_SCRIPT ${MRV2_ROOT}/cmake/dummy.cmake )
 set( CPACK_PRE_BUILD_SCRIPTS ${MRV2_ROOT}/cmake/prepackage.cmake )
 
 if( APPLE )
-    set(CPACK_GENERATOR Bundle )
+    # set(CPACK_GENERATOR Bundle )
+
+    # set(CPACK_DMG_FORMAT "UDBZ")
+    # set(CPACK_DMG_FILESYSTEM "APFS")
 
     set( INSTALL_NAME ${PROJECT_NAME} )
+    set( HDR_INSTALL_NAME hdr )
 
+    # configure_file(
+    # 	${MRV2_DIR}/etc/macOS/Info.plist.in
+    # 	${PROJECT_BINARY_DIR}/Info.plist )
+
+    # set(CPACK_PACKAGE_ICON ${MRV2_DIR}/etc/macOS/mrv2.icns )
+    # set(CPACK_BUNDLE_NAME ${INSTALL_NAME} )
+    # set(CPACK_BUNDLE_ICON ${MRV2_DIR}/etc/macOS/mrv2.icns )
+    # set(CPACK_BUNDLE_PLIST ${PROJECT_BINARY_DIR}/Info.plist )
+    # set(CPACK_BUNDLE_STARTUP_COMMAND ${MRV2_DIR}/etc/macOS/startup.sh)
+
+
+    ##############################
+    # New Method using Dragndrop #
+    ##############################
+
+    # Define variables for bundle directories in the build dir
+    set(MRV2_BUNDLE_DIR ${CMAKE_BINARY_DIR}/mrv2.app)
+
+    # Create the mrv2.app bundle structure
+    file(MAKE_DIRECTORY ${MRV2_BUNDLE_DIR}/Contents/MacOS)
+    file(MAKE_DIRECTORY ${MRV2_BUNDLE_DIR}/Contents/Resources)
+    
+    # Copy the icon
+    file(COPY ${MRV2_DIR}/etc/macOS/mrv2.icns
+	DESTINATION ${MRV2_BUNDLE_DIR}/Contents/Resources)
+	
+    # Copy the shell scripts into the bundles and make them executable
+    configure_file(${MRV2_DIR}/etc/macOS/mrv2.sh ${MRV2_BUNDLE_DIR}/Contents/MacOS/mrv2 COPYONLY)
+    
     configure_file(
-	${MRV2_DIR}/etc/macOS/Info.plist.in
-	${PROJECT_BINARY_DIR}/Info.plist )
+     	${MRV2_DIR}/etc/macOS/mrv2.plist.in
+     	${MRV2_BUNDLE_DIR}/Contents/Info.plist )
 
+    
+    install(DIRECTORY ${MRV2_BUNDLE_DIR}
+	DESTINATION .
+	USE_SOURCE_PERMISSIONS
+	COMPONENT applications
+    )
+    
+
+    
+    if (EXISTS ${CMAKE_INSTALL_PREFIX}/bin/hdr)
+	
+	set(HDR_BUNDLE_DIR ${CMAKE_BINARY_DIR}/hdr.app)
+	
+	# Create the hdr.app bundle structure
+	file(MAKE_DIRECTORY ${HDR_BUNDLE_DIR}/Contents/MacOS)
+	file(MAKE_DIRECTORY ${HDR_BUNDLE_DIR}/Contents/Resources)
+
+	# Copy the icon
+	file(COPY ${MRV2_DIR}/etc/macOS/hdr.icns
+	    DESTINATION ${HDR_BUNDLE_DIR}/Contents/Resources)
+    
+	# Copy the shell scripts into the bundles and make them executable
+	configure_file(${MRV2_DIR}/etc/macOS/hdr.sh ${HDR_BUNDLE_DIR}/Contents/MacOS/hdr COPYONLY)
+    
+	configure_file(
+     	    ${MRV2_DIR}/etc/macOS/hdr.plist.in
+     	    ${HDR_BUNDLE_DIR}/Contents/Info.plist )
+	
+	install(DIRECTORY ${HDR_BUNDLE_DIR}
+	    DESTINATION .
+	    USE_SOURCE_PERMISSIONS
+	    COMPONENT applications
+	)
+    endif()
+
+    # Configure CPack for DragNDrop
+    set(CPACK_GENERATOR "DragNDrop")
+
+    # Package settings
     set(CPACK_PACKAGE_ICON ${MRV2_DIR}/etc/macOS/mrv2.icns )
-    set(CPACK_BUNDLE_NAME ${INSTALL_NAME} )
-    set(CPACK_BUNDLE_ICON ${MRV2_DIR}/etc/macOS/mrv2.icns )
-    set(CPACK_BUNDLE_PLIST ${PROJECT_BINARY_DIR}/Info.plist )
-    set(CPACK_BUNDLE_STARTUP_COMMAND ${MRV2_DIR}/etc/macOS/startup.sh)
+
+    # DragNDrop settings
+    set(CPACK_DMG_VOLUME_NAME "mrv2 Installer")
+    set(CPACK_DMG_FORMAT "UDZO")
+    Set(CPACK_DMG_VOLUME_NAME ${CPACK_PACKAGE_FILE_NAME})
+    set(CPACK_DMG_VOLUME_ICON ${MRV2_DIR}/etc/macOS/mrv2.icns)
+    
+    
+    
+    set(CPACK_COMPONENTS_ALL "macos_bundles")
+    set(CPACK_INSTALL_CMAKE_PROJECTS "${CMAKE_BINARY_DIR};${CMAKE_PROJECT_NAME};applications;/")
+    set(CPACK_INSTALLED_DIRECTORIES "${CMAKE_BINARY_DIR}/install;.")
+
 elseif(UNIX)
     
     #
@@ -113,19 +199,33 @@ elseif(UNIX)
     #
     configure_file( ${MRV2_DIR}/etc/Linux/mrv2.desktop.in
 	"${PROJECT_BINARY_DIR}/etc/mrv2-v${mrv2_VERSION}.desktop" )
+    configure_file( ${MRV2_DIR}/etc/Linux/hdr.desktop.in
+	"${PROJECT_BINARY_DIR}/etc/hdr-v${mrv2_VERSION}.desktop" )
 
     #
     # This desktop file is for Wayland to set its icon correctly.
     #
     configure_file( ${MRV2_DIR}/etc/Linux/mrv2.main.desktop.in
 	"${PROJECT_BINARY_DIR}/etc/mrv2.desktop" )
-
     install(FILES "${PROJECT_BINARY_DIR}/etc/mrv2-v${mrv2_VERSION}.desktop"
 	DESTINATION share/applications COMPONENT applications)
     install(FILES "${PROJECT_BINARY_DIR}/etc/mrv2.desktop"
 	DESTINATION share/applications COMPONENT applications)
     install(DIRECTORY ${MRV2_DIR}/share/icons
 	DESTINATION share/ COMPONENT applications)
+
+    if (EXISTS "${CMAKE_INSTALL_PREFIX}/bin/hdr")
+	configure_file( ${MRV2_DIR}/etc/Linux/hdr.main.desktop.in
+	    "${PROJECT_BINARY_DIR}/etc/hdr.desktop")
+	configure_file( ${MRV2_DIR}/etc/Linux/hdr.desktop.in
+	    "${PROJECT_BINARY_DIR}/etc/hdr-v${mrv2_VERSION}.desktop")
+    
+	install(FILES "${PROJECT_BINARY_DIR}/etc/hdr.desktop"
+	    DESTINATION share/applications COMPONENT applications)
+	install(FILES "${PROJECT_BINARY_DIR}/etc/hdr-v${mrv2_VERSION}.desktop"
+	    DESTINATION share/applications COMPONENT applications)
+    endif()
+
 
     set(CPACK_INSTALL_PREFIX /usr/local/${mrv2ShortName})
 
@@ -195,6 +295,13 @@ else()
 	list(PREPEND CPACK_PRE_BUILD_SCRIPTS ${MRV2_ROOT}/cmake/copy_pdbs.cmake )
     endif()
 
+
+    if (MRV2_HDR)
+	install(FILES
+	    C:/Windows/System32/vulkan-1.dll
+	    DESTINATION bin
+	    COMPONENT applications)
+    endif()
     
     set(CPACK_PACKAGE_INSTALL_DIRECTORY "mrv2-v${mrv2_VERSION}" )
     
@@ -246,6 +353,7 @@ else()
     #
     # To call uninstall first if the same version has been installed.
     #
+
     set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON )
 
     include("${MRV2_ROOT}/cmake/nsis/NSISRegistry.cmake")

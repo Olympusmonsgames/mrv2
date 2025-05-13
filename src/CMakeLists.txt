@@ -9,6 +9,13 @@ project(mrv2)
 # For macOS, finds Frameworks last.  Uses Find*.cmake first.
 set(CMAKE_FIND_FRAMEWORK LAST)
 
+# Do not skip RPATH as that can make macOS crash.
+set(CMAKE_SKIP_RPATH FALSE)
+
+# Avoid warnings of overshadowing system libraries.
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+
 
 include( ../cmake/version.cmake )
 include( ../cmake/options.cmake )
@@ -16,7 +23,8 @@ include( ../cmake/functions.cmake )
 
 list(PREPEND CMAKE_MODULE_PATH
     ${PROJECT_SOURCE_DIR}/../tlRender/cmake/Modules
-    ${PROJECT_SOURCE_DIR}/../cmake/Modules)
+    ${PROJECT_SOURCE_DIR}/../cmake/Modules
+    ${CMAKE_INSTALL_PREFIX}/lib/cmake)
 
 
 
@@ -33,7 +41,7 @@ if ( UNIX )
     link_directories(${CMAKE_INSTALL_PREFIX}/lib)
 endif()
 
-
+find_package(Vulkan OPTIONAL_COMPONENTS glslang shaderc_combined SPIRV-Tools)
 find_package(FLTK CONFIG REQUIRED)
 
 
@@ -42,13 +50,16 @@ if(FLTK_BUILD_SHARED_LIBS)
 	add_definitions(-D FL_DLL)
 	set(FLTK_LIBRARIES fltk::fltk-shared )
 	set(FLTK_gl_LIBRARY )
+	set(FLTK_vk_LIBRARY )
     else()
 	set(FLTK_LIBRARIES fltk::fltk-shared fltk::images-shared )
 	set(FLTK_gl_LIBRARY fltk::gl-shared)
+	set(FLTK_vk_LIBRARY fltk::vk-shared)
     endif()
 else()
     set(FLTK_LIBRARIES fltk::fltk fltk::images )
     set(FLTK_gl_LIBRARY fltk::gl )
+    set(FLTK_vk_LIBRARY fltk::vk )
 endif()
 
 #
@@ -60,17 +71,12 @@ else()
     set(FLTK_FLUID_EXECUTABLE ${CMAKE_INSTALL_PREFIX}/bin/fluid)
 endif()
 
-if(WIN32 AND FLTK_BUILD_SHARED_LIBS)
-    add_definitions(-DFL_DLL)
-endif()
-
-
 message( STATUS "Found FLTK: ${FLTK_INCLUDE_DIR}" )
 message( STATUS "FLTK LIBRARIES: ${FLTK_gl_LIBRARY} ${FLTK_LIBRARIES}" )
 message( STATUS "FLTK_FLUID_EXECUTABLE: ${FLTK_FLUID_EXECUTABLE}" )
 
 
-find_package(Intl)
+find_package(Intl REQUIRED)
 find_package(tlRender REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(glfw3 REQUIRED)
@@ -91,8 +97,12 @@ if (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     add_definitions( -D MRV2_RelWithDebInfo )
 endif()
 
-if(UNIX AND NOT APPLE)
-    find_library(backtrace NAMES backtrace)
+if(NOT APPLE)
+    find_package(cpptrace CONFIG REQUIRED)
+endif()
+
+if("${TLRENDER_API}" STREQUAL "GL_4_1_Debug")
+    add_definitions(-DTLRENDER_API_GL_4_1_Debug)
 endif()
 
 if(TLRENDER_AUDIO)
@@ -111,20 +121,27 @@ if(TLRENDER_FFMPEG)
     add_definitions(-DTLRENDER_FFMPEG)
 endif()
 
-if(TLRENDER_HAP)
-    add_definitions(-DTLRENDER_HAP)
-endif()
-
 if(TLRENDER_GL)
     add_definitions(-DTLRENDER_GL)
+endif()
+
+if(TLRENDER_HAP)
+    add_definitions(-DTLRENDER_HAP)
 endif()
 
 if(TLRENDER_JPEG)
     add_definitions(-DTLRENDER_JPEG)
 endif()
 
+if(TLRENDER_LIBPLACEBO)
+    add_definitions(-DTLRENDER_LIBPLACEBO)
+endif()
+
 if(TLRENDER_NDI)
     add_definitions(-DTLRENDER_NDI)
+    if (TLRENDER_NDI_SDK MATCHES ".*Advanced.*")
+	add_definitions(-DTLRENDER_NDI_ADVANCED)
+    endif()
 endif()
 
 if(TLRENDER_NET)
@@ -148,6 +165,10 @@ endif()
 
 if(TLRENDER_STB)
     add_definitions(-DTLRENDER_STB)
+endif()
+
+if(TLRENDER_SVTAV1)
+    add_definitions(-DTLRENDER_SVTAV1)
 endif()
 
 if(TLRENDER_TIFF)
@@ -174,8 +195,11 @@ if(TLRENDER_X264)
 endif()
 
 
-if(MRV2_PYBIND11)
+if(MRV2_PYBIND11 OR BUILD_PYTHON)
     find_package(Python REQUIRED COMPONENTS Interpreter Development)
+endif()
+
+if(MRV2_PYBIND11)
     add_definitions(-DMRV2_PYBIND11)
     find_package(pybind11 REQUIRED)
 endif()
@@ -202,13 +226,13 @@ add_definitions(
 # Directory of generated .cxx/.h built from .fl files
 set( mrv2_FLUID_INCLUDE_DIR
     ${CMAKE_CURRENT_BINARY_DIR}/lib/mrvWidgets
+    ${CMAKE_CURRENT_BINARY_DIR}/lib/mrvHDRWidgets
 )
 
 #
 # We are currently not using boost anymore, but we might use it again if
 # we turn on python's USD support.
 #
-file(GLOB mrv2_BOOST_DIRS "${CMAKE_INSTALL_PREFIX}/include/boost*")
 
 set( mrv2_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/lib   # for mrv2 includes (search here first)
@@ -216,7 +240,6 @@ set( mrv2_INCLUDE_DIRS
     ${CMAKE_PREFIX_PATH}/include/OpenEXR
     ${CMAKE_PREFIX_PATH}/include/Imath
     ${CMAKE_PREFIX_PATH}/include/opentimelineio/deps
-    ${mrv2_BOOST_DIRS}
     ${CMAKE_PREFIX_PATH}/include/tlRender
     ${CMAKE_PREFIX_PATH}/include
     ${tlRender_INCLUDE_DIRS}
@@ -273,7 +296,7 @@ install( DIRECTORY python/plug-ins/demos
     COMPONENT python_demos )
 
 #
-# These two variables will contain the sources for .po tranalation.
+# These two variables will contain the sources for .po translation.
 # PO_SOURCES will contain relative paths while PO_ABS_SOURCES will contain
 # the absolute paths.
 # This is needed as gettext/cmake would run into path length issues on some
@@ -281,6 +304,39 @@ install( DIRECTORY python/plug-ins/demos
 #
 set( PO_SOURCES )
 set( PO_ABS_SOURCES )
+
+#
+#
+#
+set( PO_HDR_SOURCES )
+set( PO_HDR_ABS_SOURCES )
+
+# Retrieve the current Git branch name
+execute_process(
+    COMMAND git rev-parse --abbrev-ref HEAD
+    OUTPUT_VARIABLE GIT_BRANCH
+    OUTPUT_STRIP_TRAILING_WHITESPACE  # This removes any trailing newline characters
+)
+# Retrieve the short Git commit hash
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    OUTPUT_VARIABLE GIT_SHORT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+# Optionally, print the branch name to verify
+message(STATUS "Current Git Branch: ${GIT_BRANCH}")
+
+# Define a preprocessor macro for the Git branch name and short hash
+add_compile_definitions(GIT_BRANCH_NAME="${GIT_BRANCH}")
+add_compile_definitions(GIT_SHORT_HASH="${GIT_SHORT_HASH}")
+
+#
+# Use UTF-8
+#
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
 
 #
 # Add auxiliary libraries
@@ -291,6 +347,13 @@ add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/lib )
 # Add main source
 #
 add_subdirectory( main )
+
+#
+# Add hdr source
+#
+if (TLRENDER_NDI AND TLRENDER_FFMPEG AND TLRENDER_VK AND MRV2_HDR)
+    add_subdirectory( hdr )
+endif()
 
 #
 # Add the packaging logic

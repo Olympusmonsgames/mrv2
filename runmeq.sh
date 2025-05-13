@@ -54,13 +54,10 @@ fi
 
 
 if [[ "$CMAKE_TARGET" == "mo" ]]; then
-
-    clean_mo_files
     
     cd $dir
 
     run_cmd cmake --build . $FLAGS --config $CMAKE_BUILD_TYPE
-    run_cmd cmake --build . $FLAGS --config $CMAKE_BUILD_TYPE -t pot
     run_cmd cmake --build . $FLAGS --config $CMAKE_BUILD_TYPE -t mo
 
     sleep 5

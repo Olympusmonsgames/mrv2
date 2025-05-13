@@ -1,6 +1,9 @@
-name: MacOS 14
+name: MacOS M1
 
-on: [push]
+on:
+  push:
+    branches-ignore:
+      - vulkan
 
 jobs:
   ###################################
@@ -23,16 +26,13 @@ jobs:
     - name: Get machine name
       run: |
         echo "Machine name: $RUNNER_NAME"
-      
+
     - name: Install ninja-build
       run: brew install ninja
       
     - name: Install automake
-      run: brew install automake curl
+      run: brew install automake curl rsync
 
-    - name: Install meson
-      run: brew install meson
-      
     - name: Install GNU sed
       run: brew install gnu-sed
       
@@ -43,8 +43,30 @@ jobs:
       run: brew reinstall xz
         
     - name: Install pyFLTK dependencies
-      run: brew install subversion swig
+      run: brew install swig
       
+        
+    # Download and install Vulkan SDK with MoltenVK
+    - name: Install Vulkan SDK
+      if: github.ref_name == 'vulkan'
+      run: |
+        
+        . ./etc/macos/install_vulkan.sh
+        
+        echo "VULKAN_SDK=${VULKAN_SDK}" >> $GITHUB_ENV
+        echo "DYLD_LIBRARY_PATH=${VULKAN_SDK}/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+        echo "VK_ICD_FILENAMES=${VULKAN_SDK}/share/vulkan/icd.d/MoltenVK_icd.json" >> $GITHUB_ENV
+        echo "${VULKAN_SDK}/bin" >> $GITHUB_PATH
+
+    # Verify Vulkan installation
+    - name: Verify Vulkan
+      if: github.ref_name == 'vulkan'
+      run: |
+        echo "VULKAN_SDK: $VULKAN_SDK"
+        echo "PATH: $PATH"
+        echo "DYLD_LIBRARY_PATH: $DYLD_LIBRARY_PATH"
+        vulkaninfo --summary
+        
     - name: Setup environment
       run: mkdir -p ssh
 
@@ -54,7 +76,17 @@ jobs:
   
     - name: Set permissions on SSH key
       run: chmod 600 ssh/id_rsa
+
+    - name: Decode FLTK SSH key
+      run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.FLTK_DEPLOY_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
       
+    - name: Add SourceForge to known_hosts
+      run: ssh-keyscan frs.sourceforge.net >> ~/.ssh/known_hosts
+
     - name: Set executable permissions
       run: |
         chmod +x ./*.sh ./bin/*.sh ./etc/*.sh ./bin/release/*.sh
@@ -68,5 +100,6 @@ jobs:
         ./etc/runme_nolog.sh -t package
 
     - name: Upload binaries  # Conditional step
+      if: github.ref_name == 'beta'
       run: |
         ./bin/release/upload_sourceforge.sh

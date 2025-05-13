@@ -21,17 +21,22 @@ namespace mrv
 
     struct TimelineViewport::Private
     {
-        static std::map<
-            std::string, std::string, string::CaseInsensitiveCompare>
-            tagData;
-        static timeline::BackgroundOptions backgroundOptions;
+        static image::Tags tagData;
+        std::shared_ptr<observer::Value<timeline::BackgroundOptions> > backgroundOptions;
         static float rotation;
         static bool resizeWindow;
 
         static std::string hdr;
+        static float pixelAspectRatio;
 
+        //! Ghosting options
+        static short ghostPrevious;
+        static short ghostNext;
+        
         timeline::OCIOOptions ocioOptions;
         timeline::LUTOptions lutOptions;
+        timeline::HDROptions hdrOptions;
+
         std::vector<tl::timeline::ImageOptions> imageOptions;
         std::vector<tl::timeline::DisplayOptions> displayOptions;
         timeline::CompareOptions compareOptions;
@@ -54,11 +59,11 @@ namespace mrv
         //! Previous screen where window was opened.  Used to avoid an
         //! expensive string copy.
         int previous_screen = -1;
-        
+
         //! Timer used to stop scrubbing if there's no action on the user's
         //! side.
         std::chrono::high_resolution_clock::time_point lastScrubTime;
-        
+
         //! Used to handle spinning in environment map mode.
         math::Vector2f viewSpin;
 
@@ -74,9 +79,6 @@ namespace mrv
 
         //! Show video
         bool showVideo = true;
-        
-        short ghostPrevious = 5;
-        short ghostNext = 5;
 
         //! Main ui pointer
         ViewerUI* ui = nullptr;
@@ -103,7 +105,7 @@ namespace mrv
 
         //! Per-monitor Display/View OCIO Options.
         static std::vector<timeline::OCIOOptions> monitorOCIOOptions;
-        
+
         //! Action Mode
         static ActionMode actionMode;
 
@@ -130,7 +132,7 @@ namespace mrv
 
         //! Ignore Display Window
         static bool ignoreDisplayWindow;
-        
+
         //! Masking
         static float masking;
 
@@ -175,7 +177,11 @@ namespace mrv
         std::chrono::high_resolution_clock::time_point startTime;
 
         // Observers
-        std::shared_ptr<observer::ListObserver<timeline::VideoData> > videoDataObserver;
+        std::shared_ptr<observer::ListObserver<timeline::VideoData> >
+            videoDataObserver;
+
+        //! Overlay
+        std::shared_ptr<image::Image> overlayImage;
     };
 
 } // namespace mrv

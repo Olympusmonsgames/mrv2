@@ -46,7 +46,7 @@ namespace fs = std::filesystem;
 
 namespace
 {
-    const char* kModule = "prefs";
+    const char* kModule = "pref";
     const int kPreferencesVersion = 9;
 } // namespace
 
@@ -66,6 +66,7 @@ namespace mrv
 
     std::string Preferences::root;
     int Preferences::debug = 0;
+    int Preferences::logLevel = 0;
     std::string Preferences::hotkeys_file = "mrv2.keys";
 
     int Preferences::language_index = 0; // English
@@ -91,7 +92,7 @@ namespace mrv
         int tmp;
         double tmpD;
         float tmpF;
-        char tmpS[2048];
+        char tmpS[4096];
 
         locale::SetAndRestore saved;
 
@@ -137,7 +138,7 @@ namespace mrv
                     value = tmpD;
                     break;
                 case 's':
-                    fltk_settings.get(key, tmpS, "", 2048);
+                    fltk_settings.get(key, tmpS, "", 4096);
                     value = std::string(tmpS);
                     break;
                 case 'v':
@@ -168,7 +169,7 @@ namespace mrv
         {
             char buf[16];
             snprintf(buf, 16, "File #%d", i);
-            if (recent_files.get(buf, tmpS, "", 2048))
+            if (recent_files.get(buf, tmpS, "", 4096))
             {
                 // Only add existing files to the list.
                 if (file::isReadable(tmpS))
@@ -189,7 +190,7 @@ namespace mrv
         {
             char buf[16];
             snprintf(buf, 16, "Host #%d", i);
-            if (recent_hosts.get(buf, tmpS, "", 2048))
+            if (recent_hosts.get(buf, tmpS, "", 4096))
             {
                 settings->addRecentHost(tmpS);
             }
@@ -207,7 +208,7 @@ namespace mrv
         {
             char buf[16];
             snprintf(buf, 16, "Script #%d", i);
-            if (python_scripts.get(buf, tmpS, "", 2048))
+            if (python_scripts.get(buf, tmpS, "", 4096))
             {
                 settings->addPythonScript(tmpS);
             }
@@ -270,6 +271,9 @@ namespace mrv
 
         gui.get("timeline_display", tmp, 0);
         uiPrefs->uiPrefsTimelineDisplay->value(tmp);
+
+        gui.get("timeline_video_offset", tmpF, 0.0);
+        uiPrefs->uiStartTimeOffset->value(tmpF);
 
         gui.get("timeline_thumbnails", tmp, 1);
         uiPrefs->uiPrefsTimelineThumbnails->value(tmp);
@@ -360,7 +364,7 @@ namespace mrv
 
         view.get("ocio_in_top_bar", tmp, 0);
         uiPrefs->uiPrefsOCIOInTopBar->value((bool)tmp);
-        
+
         view.get("video_levels", tmp, 0);
         uiPrefs->uiPrefsVideoLevels->value(tmp);
 
@@ -379,6 +383,19 @@ namespace mrv
         view.get("zoom_speed", tmp, 2);
         uiPrefs->uiPrefsZoomSpeed->value(tmp);
 
+        //
+        // HDR
+        //
+        Fl_Preferences hdr(gui, "hdr");
+        hdr.get("chromaticities", tmp, 0);
+        uiPrefs->uiPrefsChromaticities->value(tmp);
+        
+        hdr.get("tonemap", tmp, 1);
+        uiPrefs->uiPrefsTonemap->value(tmp);
+        
+        hdr.get("tonemap_algorithm", tmp, 0);
+        uiPrefs->uiPrefsTonemapAlgorithm->value(tmp);
+        
         DBG3;
         //
         // ui/colors
@@ -394,15 +411,10 @@ namespace mrv
 
         colors.get("selection_text_color", selectiontextcolor, 0x00000000);
 
-        colors.get("scheme", tmpS, "gtk+", 2048);
+        colors.get("scheme", tmpS, "gtk+", 4096);
 
-        const Fl_Menu_Item* item = uiPrefs->uiScheme->find_item(tmpS);
-        if (item)
-        {
-            uiPrefs->uiScheme->picked(item);
-            Fl::scheme(tmpS);
-        }
-
+        Fl::scheme(tmpS);
+        
         bool loaded = false;
 
         std::string colorname = prefspath() + "mrv2.colors";
@@ -432,16 +444,15 @@ namespace mrv
 
         for (auto& t : schemes.themes)
         {
-
             uiPrefs->uiColorTheme->add(t.name.c_str());
         }
 
-        colors.get("theme", tmpS, "Black", 2048);
+        colors.get("theme", tmpS, "Black", 4096);
 
         auto context = App::app->getContext();
         schemes.setContext(context);
 
-        item = uiPrefs->uiColorTheme->find_item(tmpS);
+        const Fl_Menu_Item* item = uiPrefs->uiColorTheme->find_item(tmpS);
         if (item)
         {
             uiPrefs->uiColorTheme->picked(item);
@@ -547,23 +558,27 @@ namespace mrv
         }
 
         const char* var = fl_getenv("OCIO");
-        if (!var || strlen(var) == 0)
         {
-            ocio.get("config", tmpS, "", 2048);
-
-            if (strlen(tmpS) != 0)
+            const char* kModule = "ocio";
+            
+            if (!var || strlen(var) == 0)
             {
-                if (ocio::ocioDefault != tmpS)
+                ocio.get("config", tmpS, "", 4096);
+
+                if (strlen(tmpS) != 0)
                 {
-                    LOG_INFO(_("Setting OCIO config from preferences."));
-                    setConfig(tmpS);
+                    if (ocio::ocioDefault != tmpS)
+                    {
+                        LOG_INFO(_("Setting OCIO config from preferences."));
+                        setConfig(tmpS);
+                    }
                 }
             }
-        }
-        else
-        {
-            LOG_INFO(_("Setting OCIO config from OCIO environment variable."));
-            setConfig(var);
+            else
+            {
+                LOG_INFO(_("Setting OCIO config from OCIO environment variable."));
+                setConfig(var);
+            }
         }
 
         var = uiPrefs->uiPrefsOCIOConfig->value();
@@ -574,14 +589,14 @@ namespace mrv
 
         ocio.get("use_default_display_view", tmp, 0);
         uiPrefs->uiOCIOUseDefaultDisplayView->value(tmp);
-        
+
         ocio.get("use_active_views", tmp, 1);
         uiPrefs->uiOCIOUseActiveViews->value(tmp);
 
         Fl_Preferences ics(ocio, "ICS");
         {
 #define OCIO_ICS(x, d)                                                         \
-    ok = ics.get(#x, tmpS, d, 2048);                                           \
+    ok = ics.get(#x, tmpS, d, 4096);                                           \
     uiPrefs->uiOCIO_##x##_ics->value(tmpS);
 
             OCIO_ICS(8bits, "");
@@ -596,11 +611,11 @@ namespace mrv
         }
 
         Fl_Preferences display_view(ocio, "DisplayView");
-        display_view.get("DisplayView", tmpS, "", 2048);
+        display_view.get("DisplayView", tmpS, "", 4096);
         uiPrefs->uiOCIO_Display_View->value(tmpS);
 
         Fl_Preferences look(ocio, "Look");
-        look.get("Look", tmpS, "", 2048);
+        look.get("Look", tmpS, "", 4096);
         uiPrefs->uiOCIO_Look->value(tmpS);
 
         //
@@ -727,7 +742,7 @@ namespace mrv
         loading.get("missing_frame_type", tmp, 0);
         uiPrefs->uiMissingFrameType->value(tmp);
 
-        loading.get("version_regex", tmpS, "_v", 2048);
+        loading.get("version_regex", tmpS, "_v", 4096);
         if (strlen(tmpS) == 0)
         {
             strcpy(tmpS, "_v");
@@ -737,7 +752,7 @@ namespace mrv
         loading.get("max_images_apart", tmp, 10);
         uiPrefs->uiPrefsMaxImagesApart->value(tmp);
 
-        char key[256];
+        char key[2048];
 
         std::string mappingpath = studiopath();
         if (!file::isReadable(mappingpath + "/mrv2.paths"))
@@ -749,8 +764,8 @@ namespace mrv
         num = path_mapping.entries();
         for (int i = 0; i < num; ++i)
         {
-            snprintf(key, 256, "Path #%d", i + 1);
-            path_mapping.get(key, tmpS, "", 256);
+            snprintf(key, 2048, "Path #%d", i + 1);
+            path_mapping.get(key, tmpS, "", 4096);
             if (strlen(tmpS) == 0)
                 continue;
             uiPrefs->PathMappings->add(tmpS);
@@ -863,7 +878,7 @@ namespace mrv
         }
         else
         {
-            msg = tl::string::Format(_("Reseting hotkeys to default."));
+            msg = tl::string::Format(_("Resetting hotkeys to default."));
         }
         LOG_INFO(msg);
 
@@ -874,7 +889,6 @@ namespace mrv
         // Update hotkeys tooltips in UI.
         update_hotkey_tooltips();
 
-        
         std_any value;
 
         int v = settings->getValue<int>("Performance/AudioBufferFrameCount");
@@ -1027,7 +1041,7 @@ namespace mrv
             visible = 1;
         settings->setValue("gui/Preferences/Window/Visible", visible);
 
-        int width = ui->uiDockGroup->w() == 0 ? 1 : ui->uiDockGroup->w();
+        int width = ui->uiDockGroup->w() <= 0 ? 1 : ui->uiDockGroup->w();
         float pct = (float)width / ui->uiViewGroup->w();
         settings->setValue("gui/DockGroup/Width", pct);
 
@@ -1212,6 +1226,7 @@ namespace mrv
         gui.set("raise_on_enter", (int)uiPrefs->uiPrefsRaiseOnEnter->value());
 
         gui.set("timeline_display", uiPrefs->uiPrefsTimelineDisplay->value());
+        gui.set("timeline_video_offset", uiPrefs->uiStartTimeOffset->value());
         gui.set(
             "timeline_thumbnails", uiPrefs->uiPrefsTimelineThumbnails->value());
         gui.set("panel_thumbnails", uiPrefs->uiPrefsPanelThumbnails->value());
@@ -1247,6 +1262,12 @@ namespace mrv
         view.set("crop_area", uiPrefs->uiPrefsCropArea->value());
         view.set("zoom_speed", (int)uiPrefs->uiPrefsZoomSpeed->value());
 
+        Fl_Preferences hdr(gui, "hdr");
+        hdr.set("chromaticities", uiPrefs->uiPrefsChromaticities->value());
+        hdr.set("tonemap", uiPrefs->uiPrefsTonemap->value());
+        hdr.set("tonemap_algorithm",
+                uiPrefs->uiPrefsTonemapAlgorithm->value());
+        
         //
         // view/colors prefs
         //
@@ -1344,7 +1365,7 @@ namespace mrv
         // ui/colors prefs
         //
         Fl_Preferences colors(gui, "colors");
-        colors.set("scheme", uiPrefs->uiScheme->text());
+        colors.set("scheme", Fl::scheme());
         colors.set("theme", uiPrefs->uiColorTheme->text());
         colors.set("background_color", bgcolor);
         colors.set("text_color", textcolor);
@@ -1760,7 +1781,7 @@ namespace mrv
             ui->uiOCIO->hide();
             ui->uiCOLORS->show();
         }
-        
+
         // Handle image options
         auto imageOptions = app->imageOptions();
         int alphaBlend = uiPrefs->uiPrefsAlphaBlend->value();
@@ -1777,7 +1798,14 @@ namespace mrv
             static_cast<timeline::ImageFilter>(minifyFilter);
         displayOptions.imageFilters.magnify =
             static_cast<timeline::ImageFilter>(magnifyFilter);
+        displayOptions.ignoreChromaticities =
+            !uiPrefs->uiPrefsChromaticities->value();
         app->setDisplayOptions(displayOptions);
+        
+        timeline::HDROptions hdrOptions = ui->uiView->getHDROptions();
+        hdrOptions.algorithm =
+            static_cast<timeline::HDRTonemapAlgorithm>(uiPrefs->uiPrefsTonemapAlgorithm->value());
+        ui->uiView->setHDROptions(hdrOptions);
 
         //
         // Handle HUD
@@ -1954,7 +1982,7 @@ namespace mrv
         {
             if (file::isReadable(configName))
             {
-                LOG_INFO(_("OCIO config is now:"));
+                LOG_STATUS(_("OCIO config is now:"));
             }
             else
             {
@@ -1963,21 +1991,21 @@ namespace mrv
                         _("OCIO file \"{0}\" not found or not readable."))
                         .arg(configName);
                 LOG_ERROR(msg);
-                LOG_INFO(_("Setting OCIO config to default:"));
+                LOG_STATUS(_("Setting OCIO config to default:"));
                 configName = ocio::ocioDefault;
             }
         }
         else if (configName == ocio::ocioDefault)
         {
-            LOG_INFO(_("Setting OCIO config to default:"));
+            LOG_STATUS(_("Setting OCIO config to default:"));
             configName = ocio::ocioDefault;
         }
         else
         {
-            LOG_INFO(_("Setting OCIO config to built-in:"));
+            LOG_STATUS(_("Setting OCIO config to built-in:"));
         }
 
-        LOG_INFO(configName);
+        LOG_STATUS("\t" << configName);
         uiPrefs->uiPrefsOCIOConfig->value(configName.c_str());
         oldConfigName = configName;
     }

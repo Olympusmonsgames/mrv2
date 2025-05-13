@@ -18,4 +18,6 @@ Guía del Usuario de mrv2
    preferences
    saving
    videos
+   hdr
+   command-line
    faq

@@ -6,7 +6,14 @@
 
 echo "RUNNING upload_sourceforge.sh......"
 
-. etc/functions.sh
+. etc/build_dir.sh
+
+#
+# Unset LD_LIBRARY_PATH and DYLD_LIBRARY_PATH just in case so we don't use
+# an incorrect library that is not on the system
+#
+unset LD_LIBRARY_PATH
+unset DYLD_LIBRARY_PATH
 
 branch=$(git rev-parse --abbrev-ref HEAD)
 if [[ "$branch" != "beta" && "$branch" != "upload_test" ]]; then
@@ -15,17 +22,21 @@ if [[ "$branch" != "beta" && "$branch" != "upload_test" ]]; then
 fi
 
 if [[ -e ssh/id_rsa ]]; then
-    SSH_KEY=$PWD/ssh/id_rsa
+    export SSH_KEY=$PWD/ssh/id_rsa
 else
-    if [[ $HOME/.ssh/id256_rsa ]]; then
-	SSH_KEY=$HOME/.ssh/id256_rsa
-    elif [[ $HOME/.ssh/id_rsa ]]; then
-	SSH_KEY=$HOME/.ssh/id_rsa
+    if [[ -e $HOME/.ssh/id256_rsa ]]; then
+	export SSH_KEY=$HOME/.ssh/id256_rsa
+    elif [[  -e $HOME/.ssh/id_rsa ]]; then
+	export SSH_KEY=$HOME/.ssh/id_rsa
     else
-	echo "Unknown SSH key file. Aborting..."
-	exit 1
+	export SSH_KEY=$HOME/.ssh/mrv2_sourceforge
+	if [[ ! -e $SSH_KEY ]]; then
+	    echo "Unknown SSH key file. Aborting..."
+	    exit 1
+	fi
     fi
 fi
+
 echo "SSH KEY IS: ${SSH_KEY}"
 
 get_kernel
@@ -61,36 +72,41 @@ echo "mrv2 VERSION=$mrv2_VERSION"
 #
 # Go to packages directory
 #
-mkdir -p packages
-cd packages
+package_dir=packages/$BUILD_DIR
+echo "Looking for files in ${package_dir}"
+mkdir -p $package_dir
+cd $package_dir
 
 # Read all the files of this version
 files=$(ls -1 *v${mrv2_VERSION}*)
 
 
 if [[ $KERNEL == *Msys* ]]; then
-    pacman -Sy openssh --noconfirm
+    pacman -Sy openssh rsync --noconfirm
 fi
 
-
-# Create the remote directory
-echo "Create directory and register sourceforge site..."
-ssh -i $SSH_KEY -o StrictHostKeyChecking=no ggarra13@frs.sourceforge.net 'mkdir -p /home/frs/project/mrv2/beta/'
+echo "OpenSSL version:"
+openssl version
+echo "ssh version:"
+ssh -V
 
 echo "Proceed with uploading..."
 
-
 upload_file()
 {
-    # Upload the file to the created directory
     echo
     echo "Uploading $1 as $2..."
     echo
-    scp -i $SSH_KEY $1 ggarra13@frs.sourceforge.net:/home/frs/project/mrv2/beta/$2
+    
+    rsync -avz -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no" $1 ggarra13@frs.sourceforge.net:/home/frs/project/mrv2/beta/$2 2>&1 | tee rsync_error.log
+    if [[ $? -ne 0 ]]; then
+        echo "rsync command failed. Error log:"
+	cat rsync_error.log
+        exit 1
+    fi
     echo
     echo "Upload was successful."
     echo
-
 }
 
 #
@@ -109,7 +125,7 @@ ${date}.
 It does not support NDI® on any platform.
 
 It works on Windows 8.1+ (without USD support), Ubuntu 20.04 LTS+,
-macOS 12 (amd64 also without USD support) and macOS M1/M2/M3 (arm64). 
+macOS 13 (amd64 also without USD support) and macOS M1/M2/M3 (arm64). 
 
 It may contain bugs, new untested features and more.
 
@@ -131,16 +147,28 @@ Enjoy!
 
 EOF
 
-HISTORY=../src/docs/HISTORY.md
+HISTORY=../../../src/docs/HISTORY.md
+if [[ ! -f "$HISTORY" ]]; then
+    echo "Error: $HISTORY not found."
+    exit 1
+fi
 
 # Find the line number of "v${mrv2_VERSION}" in the file
 start_line=$(grep -n "^v${mrv2_VERSION}" "$HISTORY" | cut -d':' -f1)
+if [[ -z "$start_line" ]]; then
+    echo "Error: Version v${mrv2_VERSION} not found in $HISTORY."
+    exit 1
+fi
 
 # Find the line numbers of all "v*.*.*" occurrences in the file
 end_lines=$(grep -n "^v[0-9]\+\.[0-9]\+\.[0-9]\+" "$HISTORY" | cut -d':' -f1)
+if [[ -z "$end_lines" ]]; then
+    echo "Error: No version lines found in $HISTORY."
+    exit 1
+fi
 
-# Convert the end_lines string into an array
-IFS=$'\n' read -rd '' -a end_lines <<< "$end_lines"
+# Convert end_lines to an array (compatible with Bash 3.2)
+IFS=$'\n' read -d '' -r -a end_lines <<< "$end_lines" || true  # '|| true' handles potential read failure"
 
 # Initialize the end_line to 0
 end_line=${end_lines[1]}
@@ -149,6 +177,11 @@ start_line=$((start_line + 2))
 
 # Use sed to extract the text between the two lines and store it in a variable
 release_notes=$(sed -n "$start_line,${end_line}p" "$HISTORY")
+if [[ -z "$release_notes" ]]; then
+    echo "Warning: No release notes extracted between lines $start_line and $end_line."
+else
+    echo "Release notes extracted."
+fi
 
 echo "$release_notes" >> README.md
 
@@ -163,10 +196,13 @@ cat <<"EOF" >> README.md
   The macOS application is currently not notarized, so when you launch it you
   will not be able to run it as macOS will warn you that the file is not secure
   as it was downloaded from internet.
-  To avoid that, you need to open the Finder, go to the Applications directory
-  and CTRL + Left mouse click on the mrv2 application.  That will bring up
-  the same warning, but this time it will have a button that will allow you
-  to open it.  You only need to do this once.
+  To avoid that, you need to open the Apple Logo->Settings->Privacy and Security
+  and go to Security and allow "Opening Anyway".
+  Alternatively, you can do it from the Terminal, by:
+  
+```
+  sudo xattr -rd com.apple.quarantine /Applications/mrv2.app/
+```
 
 - Windows and Chrome, like macOS, also protect you from installing files
   from the Internet.  When you first download it with Chrome it may warn
@@ -176,7 +212,7 @@ cat <<"EOF" >> README.md
   Windows Explorer and go to the Downloads directory.  You should then
   run it from there.
   Then Windows will popup a Blue box telling you Windows SmartScreen
-  prevented the start of an unknown aplication and that you can place your
+  prevented the start of an unknown application and that you can place your
   PC at risk.
   Click on the More Information text and a Button that says Run anyway or
   similar should appear.  Click on it and follow the standard instructions
@@ -216,7 +252,7 @@ cat <<"EOF" >> README.md
   then run mrv2 by using the mrv2.sh shell script in the bin/ subdirectory.
 EOF
 
-
+echo "Upload README.md"
 upload_file README.md README.md
 rm README.md
 
@@ -233,6 +269,8 @@ IFS=$'\n'
 # Convert the variable into an array
 file_array=($files)
 
+echo "FILES=$files"
+
 # Iterate over the array of filenames
 for src in "${file_array[@]}"; do
     dest=`echo $src | sed -e "s/v$mrv2_VERSION/beta/"`
@@ -243,5 +281,5 @@ done
 IFS=$' \t\n'
 
 # Go back to root directory
-cd ..
+cd ../../..
 

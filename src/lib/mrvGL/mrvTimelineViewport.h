@@ -4,17 +4,20 @@
 
 #pragma once
 
-#include <tlTimeline/BackgroundOptions.h>
-#include <tlTimeline/PlayerOptions.h>
-#include <tlTimeline/IRender.h>
-
 #include "mrvCore/mrvActionMode.h"
+#include "mrvCore/mrvString.h"
+
+#include "mrvFl/mrvColorAreaInfo.h"
+#include "mrvFl/mrvLaserFadeData.h"
 
 #include "mrvOptions/mrvStereo3DOptions.h"
 #include "mrvOptions/mrvEnvironmentMapOptions.h"
 
-#include "mrvFl/mrvColorAreaInfo.h"
-#include "mrvFl/mrvLaserFadeData.h"
+#include <tlTimeline/BackgroundOptions.h>
+#include <tlTimeline/IRender.h>
+#include <tlTimeline/PlayerOptions.h>
+
+#include <tlCore/ValueObserver.h>
 
 // FLTK includes
 #ifdef TLRENDER_GL
@@ -54,7 +57,7 @@ namespace mrv
 
         //! Stop playback while scrubbing check for audio
         void stopPlaybackWhileScrubbing() noexcept;
-        
+
         //! Undo last shape and annotations if no more shapes.
         void undo();
 
@@ -63,7 +66,7 @@ namespace mrv
 
         //! Change cursor to another.
         void set_cursor(Fl_Cursor x) const noexcept;
-        
+
         //! Set the action mode.
         void setActionMode(const ActionMode& mode) noexcept;
 
@@ -73,10 +76,13 @@ namespace mrv
         //! Return the current video image in BGRA order after drawing it.
         const image::Color4f* image() const;
 
-        //! Get the compositing status.
+        //! Get the background options.
         const timeline::BackgroundOptions&
         getBackgroundOptions() const noexcept;
-
+        
+        //! Observe the background options.
+        std::shared_ptr<observer::IValue<timeline::BackgroundOptions> > observeBackgroundOptions() const;
+        
         //! Set the background options.
         void setBackgroundOptions(const timeline::BackgroundOptions& value);
 
@@ -84,8 +90,8 @@ namespace mrv
         void setOCIOOptions(const timeline::OCIOOptions&) noexcept;
 
         //! Set the OCIO options for monitor.
-        void setOCIOOptions(unsigned monitorId,
-                            const timeline::OCIOOptions&) noexcept;
+        void setOCIOOptions(
+            unsigned monitorId, const timeline::OCIOOptions&) noexcept;
 
         const timeline::OCIOOptions&
         getOCIOOptions(unsigned monitorId) const noexcept;
@@ -111,6 +117,11 @@ namespace mrv
         //! Set the stereo 3D options.
         void setStereo3DOptions(const Stereo3DOptions&) noexcept;
 
+        //! Set HDR options.
+        void setHDROptions(const timeline::HDROptions&) noexcept;
+
+        const timeline::HDROptions& getHDROptions() const noexcept;
+        
         //! Set the timeline players.
         void setTimelinePlayer(TimelinePlayer*) noexcept;
 
@@ -129,6 +140,9 @@ namespace mrv
         //! Return if ignoring display window is active.
         bool getIgnoreDisplayWindow() const noexcept;
 
+        //! Get pixel aspect ratio of image.
+        float getPixelAspectRatio() const noexcept;
+
         //! Set the crop mask.
         void setSafeAreas(bool) noexcept;
 
@@ -140,7 +154,10 @@ namespace mrv
 
         //! Set ignore of display window.
         void setIgnoreDisplayWindow(bool) noexcept;
-        
+
+        //! Set pixel aspect ratio of image.
+        void setPixelAspectRatio(const float x) noexcept;
+
         //! Clear the help text after 1 second has elapsed.
         void clearHelpText();
 
@@ -189,6 +206,9 @@ namespace mrv
         //! Resize the window to screen
         void resizeWindow() noexcept;
 
+        //! Set auto resizing of the window.
+        void setResizeWindow(bool active) noexcept;
+        
         //! Set auto frame the view.
         void setFrameView(bool active) noexcept;
 
@@ -240,7 +260,8 @@ namespace mrv
 
         void currentTimeChanged(const otime::RationalTime&) const noexcept;
 
-        void currentVideoCallback(const std::vector<tl::timeline::VideoData>&) noexcept;
+        void currentVideoCallback(
+            const std::vector<tl::timeline::VideoData>&) noexcept;
 
         //! Set the OCIO configuration from the GUI.
         void updateOCIOOptions() noexcept;
@@ -262,11 +283,11 @@ namespace mrv
 
         //! Set or unset the window in maximized state.
         void setMaximized() noexcept;
-        
+
         //! Get the window to full screen and hide/show all bars.
         bool getPresentationMode() const noexcept;
 
-        //! Retrieve the full sceen mode.
+        //! Retrieve the full screen mode.
         bool getFullScreenMode() const noexcept;
 
         //! Set or unset the window to full screen but don't hide any bars.
@@ -297,7 +318,7 @@ namespace mrv
         //! Refresh window by clearing the associated resources.
         virtual void refresh() {};
 
-        //! FLTK Callback to handle view spinning whne in Environment Map mode.
+        //! FLTK Callback to handle view spinning when in Environment Map mode.
         static void _handleViewSpinning_cb(TimelineViewport* t) noexcept;
 
         //! Handle view spinning when in Environment Map mode.
@@ -312,9 +333,10 @@ namespace mrv
         //! Show annotations toggle
         void setShowAnnotations(const bool value) noexcept;
 
-        //! Set whether to render the video or not (annotations are still rendered).
+        //! Set whether to render the video or not (annotations are still
+        //! rendered).
         void setShowVideo(bool value) noexcept;
-        
+
         //! Laser fading annotation
         void laserFade(LaserFadeData*);
 
@@ -342,8 +364,15 @@ namespace mrv
 
         //! Show an image.
         void showImage(const std::shared_ptr<image::Image>& image);
-        
+
+        //! Get current frame/video tags
+        image::Tags getTags() const noexcept;
+
     protected:
+        void _init();
+
+        void _updateDevices() const noexcept;
+        
         virtual void _readPixel(image::Color4f& rgba) const noexcept = 0;
         math::Vector2i _getViewportCenter() const noexcept;
 
@@ -359,6 +388,9 @@ namespace mrv
         //! full rotation of the image (user rotation + video rotation)
         float _getRotation() const noexcept;
 
+        //! Get the render projection matrix.
+        math::Matrix4x4f _renderProjectionMatrix() const noexcept;
+        
         //! Get the full projection matrix.
         math::Matrix4x4f _projectionMatrix() const noexcept;
 
@@ -415,9 +447,9 @@ namespace mrv
 
         void _updateDisplayOptions(const timeline::DisplayOptions& d) noexcept;
 
-        void _updateMonitorDisplayView(const int screen,
-                                       const timeline::OCIOOptions& o) const noexcept;
-        
+        void _updateMonitorDisplayView(
+            const int screen, const timeline::OCIOOptions& o) const noexcept;
+
         void _pushColorMessage(const std::string& command, float value);
 
         void _mallocBuffer() const noexcept;

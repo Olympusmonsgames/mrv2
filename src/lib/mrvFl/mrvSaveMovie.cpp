@@ -2,6 +2,7 @@
 // mrv2
 // Copyright Contributors to the mrv2 Project. All rights reserved.
 
+#include <chrono>
 #include <string>
 #include <sstream>
 
@@ -17,9 +18,11 @@
 
 #include <tlTimelineGL/Render.h>
 
+#include "mrvCore/mrvImage.h"
 #include "mrvCore/mrvLocale.h"
 #include "mrvCore/mrvMath.h"
 #include "mrvCore/mrvUtil.h"
+#include "mrvCore/mrvWait.h"
 
 #include "mrvWidgets/mrvProgressReport.h"
 
@@ -41,41 +44,36 @@ namespace
     const char* kModule = "save";
 }
 
-
-namespace
+namespace mrv
 {
-    void waitForFirstFrame(const mrv::TimelinePlayer* player,
-                           const otime::RationalTime& startTime)
+    void waitForFrame(
+        const mrv::TimelinePlayer* player, const otime::RationalTime& startTime)
     {
         using namespace tl;
-        
+
         bool found = false;
-                    
+
         auto cacheInfoObserver =
             observer::ValueObserver<timeline::PlayerCacheInfo>::create(
                 player->player()->observeCacheInfo(),
                 [&startTime, &found](const timeline::PlayerCacheInfo& value)
+                {
+                    for (const auto& t : value.videoFrames)
                     {
-                        for (const auto& t : value.videoFrames)
+                        if (startTime >= t.start_time() &&
+                            startTime <= t.end_time_exclusive())
                         {
-                            if (startTime >= t.start_time() &&
-                                startTime <= t.end_time_exclusive())
-                            {
-                                found = true;
-                                break;
-                            }
+                            found = true;
+                            break;
                         }
-                    });
+                    }
+                });
 
         while (!found)
         {
             Fl::check();
         }
     }
-}
-
-namespace mrv
-{
 
     void
     save_movie(const std::string& file, const ViewerUI* ui, SaveOptions options)
@@ -109,7 +107,7 @@ namespace mrv
 
         auto mute = player->isMuted();
         player->setMute(true);
-        
+
         auto context = ui->app->getContext();
 
         // Get I/O cache and store its size.
@@ -169,8 +167,8 @@ namespace mrv
 #endif
 
 #ifdef TLRENDER_EXR
-            ioOptions["OpenEXR/Compression"] = getLabel(options.exrCompression);
-            ioOptions["OpenEXR/PixelType"] = getLabel(options.exrPixelType);
+            ioOptions["OpenEXR/Compression"] =
+                tl::string::Format("{0}").arg(options.exrCompression);
             {
                 std::stringstream s;
                 s << options.zipCompressionLevel;
@@ -186,7 +184,7 @@ namespace mrv
                 std::stringstream s;
                 s << speed;
                 ioOptions["OpenEXR/Speed"] = s.str();
-                LOG_INFO("OpenEXR Speed=" << speed);
+                LOG_STATUS("OpenEXR Speed=" << speed);
             }
 #endif
 
@@ -231,14 +229,14 @@ namespace mrv
             {
                 msg = string::Format(_("Saving pictures to {0}.")).arg(newFile);
             }
-            LOG_INFO(msg);
+            LOG_STATUS(msg);
 
             // Render information.
             const auto& info = player->ioInfo();
 
             auto videoTime = info.videoTime;
 
-            const bool hasVideo = !info.video.empty();
+            const bool hasVideo = (!info.video.empty()) && options.saveVideo;
 
             if (player->timeRange() != timeRange ||
                 info.videoTime.start_time() != timeRange.start_time() ||
@@ -265,7 +263,6 @@ namespace mrv
                         timeRange.duration().rescaled_to(sampleRate));
                 }
             }
-
 
 #ifdef TLRENDER_FFMPEG
             const std::string& profile = getLabel(options.ffmpegProfile);
@@ -335,9 +332,12 @@ namespace mrv
             if (newFile != file)
             {
                 if (fs::exists(newFile))
-                    throw(string::Format(_("New file {0} already exist!  "
-                                           "Cannot overwrite it."))
-                              .arg(newFile));
+                {
+                    throw std::runtime_error(
+                        string::Format(_("New file {0} already exist!  "
+                                         "Cannot overwrite it."))
+                            .arg(newFile));
+                }
             }
 
             path = file::Path(newFile);
@@ -350,7 +350,6 @@ namespace mrv
 
             if (time::compareExact(videoTime, time::invalidTimeRange))
                 videoTime = audioTime;
-
 
             const size_t endAudioSampleCount =
                 endTime.rescaled_to(sampleRate).value();
@@ -372,13 +371,12 @@ namespace mrv
             if (layerId < 0)
                 layerId = 0;
 
-
             const SaveResolution resolution = options.resolution;
             if (hasVideo)
             {
                 auto compareSize = view->getRenderSize();
-                if (!options.annotations ||
-                    compareSize.w == 0 || compareSize.h == 0)
+                if (!options.annotations || compareSize.w == 0 ||
+                    compareSize.h == 0)
                 {
                     renderSize = info.video[layerId].size;
                 }
@@ -396,7 +394,7 @@ namespace mrv
 
                     msg = tl::string::Format(_("Rotated image info: {0}"))
                               .arg(renderSize);
-                    LOG_INFO(msg);
+                    LOG_STATUS(msg);
                 }
                 if (resolution == SaveResolution::kHalfSize)
                 {
@@ -404,7 +402,7 @@ namespace mrv
                     renderSize.h /= 2;
                     msg = tl::string::Format(_("Scaled image info: {0}"))
                               .arg(renderSize);
-                    LOG_INFO(msg);
+                    LOG_STATUS(msg);
                 }
                 else if (resolution == SaveResolution::kQuarterSize)
                 {
@@ -412,10 +410,9 @@ namespace mrv
                     renderSize.h /= 4;
                     msg = tl::string::Format(_("Scaled image info: {0}"))
                               .arg(renderSize);
-                    LOG_INFO(msg);
+                    LOG_STATUS(msg);
                 }
             }
-
 
             bool interactive = view->visible_r();
             std::shared_ptr<gl::GLFWWindow> window;
@@ -423,15 +420,12 @@ namespace mrv
             {
                 // Create the window.
                 window = gl::GLFWWindow::create(
-                    "bake",
-                    math::Size2i(1, 1),
-                    context,
+                    "bake", math::Size2i(1, 1), context,
                     static_cast<int>(gl::GLFWWindowOptions::MakeCurrent));
             }
-            
+
             // Create the renderer.
             render = timeline_gl::Render::create(context);
-
             offscreenBufferOptions.colorType = image::PixelType::RGBA_F32;
 
             // Create the writer.
@@ -443,7 +437,6 @@ namespace mrv
                     string::Format(_("{0}: Cannot open writer plugin."))
                         .arg(file));
             }
-
 
             int X = 0, Y = 0;
 
@@ -463,7 +456,7 @@ namespace mrv
                 msg = tl::string::Format(_("Image info: {0} {1}"))
                           .arg(outputInfo.size)
                           .arg(outputInfo.pixelType);
-                LOG_INFO(msg);
+                LOG_STATUS(msg);
 
                 if (options.annotations)
                 {
@@ -474,20 +467,31 @@ namespace mrv
                     // flush is needed
                     Fl::flush();
                     view->flush();
-                    Fl::check();
-                    
-                    const auto& viewportSize = view->getViewportSize();
+
+                    // Wait 2 seconds (needed on Apple for presentation mode
+                    //                 visible resizing)
+                    mrv::wait::milliseconds(2000);
+
+                    // returns pixel_w(), pixel_h()
+                    auto viewportSize = view->getViewportSize();
+                    float pixels_unit = view->pixels_per_unit();
+                    viewportSize.w /= pixels_unit;
+                    viewportSize.h /= pixels_unit;
+
                     math::Size2i outputSize;
                     if (viewportSize.w >= renderSize.w &&
                         viewportSize.h >= renderSize.h)
                     {
                         view->setFrameView(false);
+#ifndef __APPLE__
+                        pixels_unit = 1.0F;
+#endif
                         if (resolution == SaveResolution::kHalfSize)
-                            view->setViewZoom(0.5);
+                            view->setViewZoom(0.5 * pixels_unit);
                         else if (resolution == SaveResolution::kQuarterSize)
-                            view->setViewZoom(0.25);
+                            view->setViewZoom(0.25 * pixels_unit);
                         else
-                            view->setViewZoom(1.0);
+                            view->setViewZoom(pixels_unit);
                         view->centerView();
                         view->redraw();
                         // flush is needed
@@ -501,25 +505,63 @@ namespace mrv
                                       "Will scale to the viewport size."));
 
                         view->frameView();
-                        
-                        outputInfo.size.w = viewportSize.w;
-                        outputInfo.size.h = viewportSize.h;
+
+                        float aspectImage =
+                            static_cast<float>(renderSize.w) / renderSize.h;
+                        float aspectViewport =
+                            static_cast<float>(viewportSize.w) / viewportSize.h;
+
+                        if (aspectImage > aspectViewport)
+                        {
+                            // Fit to width
+                            outputInfo.size.w = viewportSize.w;
+                            outputInfo.size.h = viewportSize.w / aspectImage;
+                        }
+                        else
+                        {
+                            // Fit to height
+                            outputInfo.size.h = viewportSize.h;
+                            outputInfo.size.w = viewportSize.h * aspectImage;
+                        }
                     }
 
-                    X = (viewportSize.w - outputInfo.size.w) / 2;
-                    Y = (viewportSize.h - outputInfo.size.h) / 2;
+                    X = std::max(0, (viewportSize.w - outputInfo.size.w) / 2);
+                    Y = std::max(0, (viewportSize.h - outputInfo.size.h) / 2);
+
+                    outputInfo.size.w = std::round(outputInfo.size.w);
+                    outputInfo.size.h = std::round(outputInfo.size.h);
 
                     msg = tl::string::Format(_("Viewport Size: {0} - "
                                                "X={1}, Y={2}"))
                               .arg(viewportSize)
                               .arg(X)
                               .arg(Y);
-                    LOG_INFO(msg);
+                    LOG_STATUS(msg);
                 }
 
-                waitForFirstFrame(player, startTime);
+#ifdef __APPLE__
+                if (options.annotations)
+                {
+                    switch (outputInfo.pixelType)
+                    {
+                    case image::PixelType::RGBA_F16:
+                        outputInfo.pixelType = image::PixelType::RGBA_F16;
+                        break;
+                    case image::PixelType::RGBA_F32:
+                        outputInfo.pixelType = image::PixelType::RGBA_F32;
+                        break;
+                    default:
+                        if (saveHDR)
+                            outputInfo.pixelType = image::PixelType::RGBA_F32;
+                        else if (saveEXR)
+                            outputInfo.pixelType = image::PixelType::RGBA_F16;
+                        else
+                            outputInfo.pixelType = image::PixelType::RGBA_U8;
+                        break;
+                    }
+                }
+#endif
 
-                    
                 outputInfo = writerPlugin->getWriteInfo(outputInfo);
                 if (image::PixelType::None == outputInfo.pixelType)
                 {
@@ -536,13 +578,16 @@ namespace mrv
                               _("Writer plugin did not get output info.  "
                                 "Defaulting to {0}"))
                               .arg(offscreenBufferOptions.colorType);
-                    LOG_INFO(msg);
+                    LOG_STATUS(msg);
                 }
 
 #ifdef TLRENDER_EXR
                 if (saveEXR)
                 {
-                    outputInfo.pixelType = options.exrPixelType;
+                    if (!options.annotations)
+                    {
+                        outputInfo.pixelType = options.exrPixelType;
+                    }
                 }
 #endif
                 if (saveHDR)
@@ -552,30 +597,36 @@ namespace mrv
                         image::PixelType::RGB_F32;
                 }
 
-
                 msg = tl::string::Format(_("Output info: {0} {1}"))
                           .arg(outputInfo.size)
                           .arg(outputInfo.pixelType);
-                LOG_INFO(msg);
+                LOG_STATUS(msg);
 
+#ifdef TLRENDER_EXR
+                ioOptions["OpenEXR/PixelType"] = getLabel(outputInfo.pixelType);
+#endif
                 outputImage = image::Image::create(outputInfo);
                 ioInfo.videoTime = videoTime;
                 ioInfo.video.push_back(outputInfo);
 
 #ifdef TLRENDER_FFMPEG
-                auto entries = tl::ffmpeg::getProfileLabels();
-                std::string profileName = entries[(int)options.ffmpegProfile];
-
-                msg = tl::string::Format(
-                          _("Using profile {0}, pixel format {1}."))
-                          .arg(profileName)
-                          .arg(options.ffmpegPixelFormat);
-                LOG_INFO(msg);
-                if (!options.ffmpegPreset.empty())
+                if (hasVideo && savingMovie)
                 {
-                    msg = tl::string::Format(_("Using preset {0}."))
-                              .arg(options.ffmpegPreset);
-                    LOG_INFO(msg);
+                    auto entries = tl::ffmpeg::getProfileLabels();
+                    std::string profileName =
+                        entries[(int)options.ffmpegProfile];
+
+                    msg = tl::string::Format(
+                              _("Using profile {0}, pixel format {1}."))
+                              .arg(profileName)
+                              .arg(options.ffmpegPixelFormat);
+                    LOG_STATUS(msg);
+                    if (!options.ffmpegPreset.empty())
+                    {
+                        msg = tl::string::Format(_("Using preset {0}."))
+                                  .arg(options.ffmpegPreset);
+                        LOG_STATUS(msg);
+                    }
                 }
 #endif
             }
@@ -656,11 +707,11 @@ namespace mrv
                         string::Format(_("{0}: Invalid OpenGL format and type"))
                             .arg(file));
                 }
-            }
 
-            msg = tl::string::Format(_("OpenGL info: {0}"))
-                      .arg(offscreenBufferOptions.colorType);
-            LOG_INFO(msg);
+                msg = tl::string::Format(_("OpenGL info: {0}"))
+                          .arg(offscreenBufferOptions.colorType);
+                LOG_STATUS(msg);
+            }
 
             // Turn off hud so it does not get captured by glReadPixels.
             view->setHudActive(false);
@@ -675,7 +726,7 @@ namespace mrv
                     view->make_current();
                     gl::initGLAD();
                 }
-                
+
                 buffer = gl::OffscreenBuffer::create(
                     offscreenBufferSize, offscreenBufferOptions);
             }
@@ -683,7 +734,9 @@ namespace mrv
             size_t totalSamples = 0;
             size_t currentSampleCount =
                 startTime.rescaled_to(sampleRate).value();
-            
+
+            waitForFrame(player, startTime);
+
             while (running)
             {
                 context->tick();
@@ -691,13 +744,13 @@ namespace mrv
                 // If progress window is closed, exit loop.
                 if (interactive)
                 {
-                    if(!progress.tick())
+                    if (!progress.tick())
                         break;
                 }
                 else
                 {
                     msg = string::Format(_("Saving... {0}")).arg(currentTime);
-                    LOG_INFO(msg);
+                    LOG_STATUS(msg);
                 }
 
                 if (hasAudio)
@@ -716,15 +769,14 @@ namespace mrv
                                 otime::RationalTime(1.0, currentTime.rate()));
                         else
                             range = otime::TimeRange(
-                                currentTime,
-                                otime::RationalTime(
-                                    currentTime.rate(), currentTime.rate()));
+                                otime::RationalTime(seconds, 1.0),
+                                otime::RationalTime(1.0, 1.0));
                         auto audio = audioData.layers[0].audio;
                         if (!audio)
                         {
                             // Create silence
-                            audio = audio::Audio::create(info.audio,
-                                                         sampleRate);
+                            audio =
+                                audio::Audio::create(info.audio, sampleRate);
                             audio->zero();
                         }
 
@@ -735,8 +787,8 @@ namespace mrv
 
                         // timeline->getAudio() returns one second of audio.
                         // Clamp to end of the timeRange/inOutRange.
-                        if (!skip &&
-                            currentAudioTime.value() >= currentSampleCount)
+                        if (!skip && std::round(currentAudioTime.value()) >=
+                                         currentSampleCount)
                         {
                             const size_t sampleCount = audio->getSampleCount();
                             if (currentSampleCount + sampleCount >=
@@ -790,6 +842,45 @@ namespace mrv
                         view->flush();
                         Fl::flush();
 
+#ifdef __APPLE__
+                        Fl_RGB_Image* tmp = fl_capture_window(
+                            view, X, Y, outputInfo.size.w, outputInfo.size.h);
+                        Fl_Image* rgb =
+                            tmp->copy(outputInfo.size.w, outputInfo.size.h);
+                        tmp->alloc_array = 1;
+                        delete tmp;
+
+                        // Access the first pointer in the data array
+                        const char* const* data = rgb->data();
+
+                        // Flip image in Y
+                        switch (outputImage->getPixelType())
+                        {
+                        case image::PixelType::RGBA_U8:
+                            flipImageInY(
+                                (uint8_t*)outputImage->getData(),
+                                (const uint8_t*)data[0], rgb->w(), rgb->h(),
+                                rgb->d(), 4);
+                            break;
+                        case image::PixelType::RGBA_F16:
+                            flipImageInY(
+                                (Imath::half*)outputImage->getData(),
+                                (const uint8_t*)data[0], rgb->w(), rgb->h(),
+                                rgb->d(), 4);
+                            break;
+                        case image::PixelType::RGBA_F32:
+                            flipImageInY(
+                                (float*)outputImage->getData(),
+                                (const uint8_t*)data[0], rgb->w(), rgb->h(),
+                                rgb->d(), 4);
+                            break;
+                        default:
+                            LOG_ERROR(_("Unsupported output format"));
+                            break;
+                        }
+
+                        delete rgb;
+#else
                         GLenum imageBuffer = GL_FRONT;
 
                         // @note: Wayland does not work like Windows, macOS or
@@ -801,17 +892,19 @@ namespace mrv
                         }
 
                         glReadBuffer(imageBuffer);
-                        
+                        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+
                         glReadPixels(
                             X, Y, outputInfo.size.w, outputInfo.size.h, format,
                             type, outputImage->getData());
+#endif
                     }
                     else
                     {
                         // Get the videoData
                         auto videoData =
                             timeline->getVideo(currentTime).future.get();
-                        
+
                         if (videoData.layers.empty() ||
                             !videoData.layers[0].image)
                         {
@@ -831,7 +924,7 @@ namespace mrv
                                 view->currentVideoCallback({videoData});
                                 view->flush();
                             }
-                        
+
                             // back to conventional pixel operation
                             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
                             // CHECK_GL;
@@ -849,7 +942,8 @@ namespace mrv
                                 render->setLUTOptions(view->lutOptions());
                                 render->drawVideo(
                                     {videoData},
-                                    {math::Box2i(0, 0, renderSize.w, renderSize.h)},
+                                    {math::Box2i(
+                                        0, 0, renderSize.w, renderSize.h)},
                                     {timeline::ImageOptions()},
                                     {timeline::DisplayOptions()},
                                     timeline::CompareOptions(),
@@ -861,18 +955,20 @@ namespace mrv
                                 GL_PACK_ALIGNMENT, outputInfo.layout.alignment);
 #if defined(TLRENDER_API_GL_4_1)
                             glPixelStorei(
-                                GL_PACK_SWAP_BYTES,
-                                outputInfo.layout.endian != memory::getEndian());
+                                GL_PACK_SWAP_BYTES, outputInfo.layout.endian !=
+                                                        memory::getEndian());
 #endif // TLRENDER_API_GL_4_1
 
                             glReadPixels(
-                                0, 0, outputInfo.size.w, outputInfo.size.h, format,
-                                type, outputImage->getData());
+                                0, 0, outputInfo.size.w, outputInfo.size.h,
+                                format, type, outputImage->getData());
                         }
                     }
 
                     if (videoTime.contains(currentTime))
                     {
+                        const auto& tags = ui->uiView->getTags();
+                        outputImage->setTags(tags);
                         writer->writeVideo(currentTime, outputImage);
                     }
                 }

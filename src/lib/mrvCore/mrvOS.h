@@ -7,70 +7,41 @@
 #include <string>
 
 #ifdef _WIN32
-
-#    if !(defined vsnprintf)
-#        define vsnprintf _vsnprintf
-#    endif
-
-#    if !(defined putenv)
-#        define putenv(x) _putenv(x)
-#    endif
-
-#    undef printf
-#    undef max
-#    undef min
-#    undef stricmp
-
-#    if !(defined strcasecmp)
-#        ifdef _WIN32
-#            define strcasecmp(a, b) _stricmp(a, b)
-#        else
-#            define strcasecmp(a, b) stricmp(a, b)
-#        endif
-#    endif
-
-#    if !(defined strtok_r)
-#        define strtok_r(a, b, c) strtok(a, b)
-#    endif
-
-#    if !(defined snprintf)
-#        define snprintf _snprintf
-#    endif
-
-#    if !(defined access)
-#        define access _access
-#    endif
-
-#    undef itoa
-#    define itoa(x, a, b) _itoa(x, a, b)
-
-#    undef getcwd
-#    define getcwd _getcwd
-
-#    undef chdir
-#    define chdir _chdir
-
-#    undef popen
-#    define popen _popen
-
-#    undef pclose
-#    define pclose _pclose
-
+#    define strcasecmp(a, b) _stricmp(a, b)
 #endif // _WIN32
 
 namespace mrv
 {
     namespace os
     {
-        int execv(const std::string& exe = "",
-                  const std::string& session = "");
-        
-        std::string getGPUVendor();
+        //! Return an environment variable's content in UTF-8 or empty string.
+        std::string sgetenv(const char* const n);
 
-        std::string getDesktop();
+        //! Execute a command through pipes and capture stdout/sterr.
+        //! Returns the exit value of the command.
+        int exec_command(const std::string& command, std::string& output,
+                         std::string& errors);
 
-        std::string getVersion();
+        //! Re-run the executable with its parameters or an optional session
+        //! file.
+        int execv(const std::string& exe = "", const std::string& session = "");
 
+        //! Return the name of the wayland compositor.
+        const std::string getWaylandCompositor(const std::string& desktop);
+
+        //! Return the name of the GPU Vendor.
+        const std::string getGPUVendor();
+
+        //! Return the name of the Kernel (OS).
+        const std::string getKernel();
+
+        //! Return the name of the desktop.
+        const std::string getDesktop();
+
+        //! Return the version of the OS.
+        const std::string getVersion();
+
+        //! Returns true if running on the terminal (ie. TERM is set).
         bool runningInTerminal();
     } // namespace os
 

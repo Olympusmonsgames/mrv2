@@ -14,7 +14,7 @@ namespace fs = std::filesystem;
 #if defined(WIN32) || defined(WIN64)
 #    include <winsock2.h>
 #    include <io.h>      // for _access
-#    include <windows.h> // for GetModuleFileName
+#    include <windows.h> // for GetModuleFileNameW
 #    define strdup _strdup
 #else
 #    include <unistd.h> // for access
@@ -42,6 +42,35 @@ namespace fs = std::filesystem;
 namespace
 {
 
+#ifdef _WIN32
+    int get_app_path(wchar_t* pname, size_t pathsize)
+    {
+        // Use a larger buffer for long paths (Windows supports up to
+        // 32767 chars)
+        DWORD result = GetModuleFileNameW(NULL, pname, DWORD(pathsize));
+        if (result == 0 || result >= pathsize) {
+            std::wcerr << L"GetModuleFileNameW failed or buffer too small"
+                       << std::endl;
+            return -1;
+        }
+
+        // Check if the file exists
+        if (GetFileAttributesW(pname) == INVALID_FILE_ATTRIBUTES) {
+            std::wcerr << L"File does not exist or is inaccessible"
+                       << std::endl;;
+            return -1;
+        }
+
+        // Replace backslashes with forward slashes
+        wchar_t* p = pname;
+        while (*p) {
+            if (*p == L'\\') *p = L'/';
+            p++;
+        }
+        
+        return 0; // Success
+    }
+#else  // !_WIN32
     /*
      * Mechanism to handle determining *where* the exe actually lives
      */
@@ -49,7 +78,7 @@ namespace
     {
         long result;
 
-#ifdef __linux__
+#  ifdef __linux__
         /* Oddly, the readlink(2) man page says no NULL is appended. */
         /* So you have to do it yourself, based on the return value: */
         pathsize--; /* Preserve a space to add the trailing NULL */
@@ -63,31 +92,14 @@ namespace
                           /*else name doesn't seem to exist, return FAIL (falls
                             through) */
         }
-#elif defined(_WIN32)
-        result = GetModuleFileName(NULL, pname, DWORD(pathsize));
-        if (result > 0)
-        {
-            /* fix up the dir slashes... */
-            size_t len = strlen(pname);
-            size_t idx;
-            for (idx = 0; idx < len; idx++)
-            {
-                if (pname[idx] == '\\')
-                    pname[idx] = '/';
-            }
-            if ((access(pname, 0) == 0))
-                return 0; /* file exists, return OK */
-                          /*else name doesn't seem to exist, return FAIL (falls
-                            through) */
-        }
-#elif defined(SOLARIS)
+#  elif defined(SOLARIS)
         char* p = getexecname();
         if (p)
         {
             /* According to the Sun manpages, getexecname will
                "normally" return an */
-            /* absolute path - BUT might not... AND that IF it is not,
-               pre-pending */
+            /* absolute path - BUT it may not AND therefore,
+               prepending */
             /* getcwd() will "usually" be the correct thing... Urgh!
              */
 
@@ -114,7 +126,7 @@ namespace
                                 (falls through) */
             }
         }
-#elif defined(__APPLE__) /* assume this is OSX */
+#  elif defined(__APPLE__) /* assume this is OSX */
         /*
           from http://www.hmug.org/man/3/NSModule.html
 
@@ -149,12 +161,13 @@ namespace
         }
         free(given_path);
         return status;
-#else                    /* APPLE */
+#  else                    /* APPLE */
 #    error Unknown OS
-#endif /* APPLE */
+#  endif /* APPLE */
 
         return -1; /* Path Lookup Failed */
     } /* where_do_I_live */
+#endif // ! _WIN32
 } // namespace
 
 namespace mrv
@@ -162,6 +175,31 @@ namespace mrv
 
     void set_root_path(const int argc, char** argv)
     {
+#ifdef _WIN32
+        // Check existing environment variable
+        wchar_t binpath[32767]; // Max path length on Windows
+        binpath[0] = L'\0';
+
+        int ok = get_app_path(binpath, 32767);
+        if (ok != 0)
+        {
+            if (argc >= 1) {
+                // Convert argv[0] from char* to wchar_t*
+                size_t converted;
+                mbstowcs_s(&converted, binpath, argv[0], 32767);
+            }
+        }
+                
+        fs::path rootdir(binpath);
+        fs::path parent = rootdir.parent_path(); // Skip executable
+        rootdir = parent.parent_path();          // Skip bin/ directory
+
+        std::wstring root_str = rootdir.wstring();
+        if (setenv(L"MRV2_ROOT", root_str.c_str(), 1) != 0)
+        {
+            std::wcerr << L"failed to set MRV2_ROOT" << std::endl;
+        }
+#else  // ! _WIN32
         char* root = fl_getenv("MRV2_ROOT");
 
         if (!root)
@@ -182,5 +220,6 @@ namespace mrv
 
             setenv("MRV2_ROOT", rootdir.string().c_str(), 1);
         }
+#endif
     }
 } // namespace mrv

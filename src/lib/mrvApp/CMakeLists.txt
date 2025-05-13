@@ -10,15 +10,15 @@ set(HEADERS
     mrvPlaylistsModel.h
     mrvSettingsObject.h
     mrvStdAnyHelper.h
-  )
-  set(SOURCES
+)
+set(SOURCES
     mrvApp.cpp
     mrvFilesModel.cpp
     mrvMainControl.cpp
     mrvOpenSeparateAudioDialog.cpp
     mrvPlaylistsModel.cpp
     mrvSettingsObject.cpp
-  )
+)
 
 add_library(mrvApp ${SOURCES} ${HEADERS})
 files_to_absolute_paths()
@@ -28,7 +28,7 @@ if (TLRENDER_GL)
     set( GL_LIBRARY mrvGL )
 endif()
 
-target_link_libraries(mrvApp PUBLIC mrvPanels mrvNetwork mrvDraw mrvFLU mrvWidgets mrvOptions ${FLTK_LIBRARIES} )
+target_link_libraries(mrvApp PUBLIC mrvBaseApp mrvPanels mrvNetwork mrvDraw mrvFLU mrvWidgets mrvOptions ${FLTK_LIBRARIES} )
 target_include_directories(mrvApp PUBLIC ${INCLUDES} )
 set_target_properties(mrvApp PROPERTIES FOLDER lib)
 

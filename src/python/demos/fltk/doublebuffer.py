@@ -2,7 +2,7 @@
 # the Fast Light Tool Kit (pyFLTK).
 #
 # This demo shows how double buffering helps, by drawing the
-# window in a particularily bad way.
+# window in a particularly bad way.
 #
 # The single-buffered window will blink as it updates.  The
 # double buffered one will not.  It will take just as long
@@ -32,7 +32,7 @@
 # Please report all bugs and problems to "pyfltk-user@lists.sourceforge.net".
 #
 
-from fltk14 import *
+from fltk import *
 import sys
 import math
 

@@ -8,6 +8,14 @@
 #include <vector>
 #include <algorithm>
 
+#ifndef GIT_BRANCH_NAME
+#    define GIT_BRANCH_NAME "main"
+#endif
+
+#ifndef GIT_SHORT_HASH
+#    define GIT_SHORT_HASH ""
+#endif
+
 #ifdef __linux__
 
 #    include <sys/types.h>
@@ -74,6 +82,13 @@
 
 #ifdef TLRENDER_GL
 #    include <tlGL/Init.h>
+#endif
+
+#ifdef TLRENDER_LIBPLACEBO
+extern "C"
+{
+#    include <libplacebo/config.h>
+}
 #endif
 
 // Must come last!
@@ -153,10 +168,9 @@ extern "C"
 
 #include "mrvFl/mrvIO.h"
 
-
 #ifdef TLRENDER_RAW
-#    define __STDC_VERSION__ 201112L  // Avoid compiler warning
-#    include <jasper/jas_version.h>   // Must be included last.
+#    define __STDC_VERSION__ 201112L // Avoid compiler warning
+#    include <jasper/jas_version.h>  // Must be included last.
 #endif
 
 namespace mrv
@@ -295,9 +309,43 @@ namespace mrv
         return kVersion;
     }
 
-    const char* build_date()
+    const std::string build_date()
     {
-        return kBuild;
+        std::string out = kBuild;
+
+        // Output also ocmpile type
+        std::string compile = "Debug Compile";
+#ifdef NDEBUG
+#    ifdef MRV2_RelWithDebInfo
+        compile = "RelWithDebInfo";
+#    else
+        compile = "Release";
+#    endif
+#endif
+        out += " - " + compile;
+        return out;
+    }
+
+    const std::string build_info()
+    {
+        std::stringstream s;
+        s << _("Build Environment:") << std::endl
+          << _("\tDistribution: ") << kBUILD_DISTRO << " " << kBUILD_VERSION
+          << std::endl
+          << _("\tDesktop Environment: ") << kBUILD_DESKTOP_ENV << std::endl
+          << _("\tKernel Info: ") << kBUILD_KERNEL_INFO << std::endl;
+        return s.str();
+    }
+
+    const std::string running_info()
+    {
+        std::stringstream s;
+        s << _("Running Environment:") << std::endl
+          << mrv::os::getVersion() << std::endl
+          << mrv::os::getDesktop() << std::endl
+          << mrv::os::getKernel() << std::endl;
+
+        return s.str();
     }
 
     static int ffmpeg_format_widths[] = {20, 20, 20, 130, 80, 150, 0};
@@ -418,7 +466,7 @@ namespace mrv
         f = new FormatInfo(true, false, false, "DRF", "mrv2", "RAW Image File");
         formats.push_back(f);
         f = new FormatInfo(
-            true, false, false, "DSC", "mrv2", "Digitial Still RAW Camera");
+            true, false, false, "DSC", "mrv2", "Digital Still RAW Camera");
         formats.push_back(f);
         f = new FormatInfo(
             true, false, false, "ERF", "mrv2", "Epson RAW Camera");
@@ -690,27 +738,35 @@ namespace mrv
 
         std::stringstream o;
 
-        o << "mrv2 " << kArch << " bits - v" << kVersion << " " << kBuild
+        o << "mrv2 " << kArch << " bits - v" << kVersion << " " << build_date()
+          << " Git Branch: " << GIT_BRANCH_NAME << " (" << GIT_SHORT_HASH << ")"
           << endl
-#ifdef __GLIBCXX__
-          << _("With gcc ") << __GNUC__ << endl
-#elif defined(__clang__)
-          << _("With clang ") << __clang__ << " " << __llvm__ << endl
-#else
-          << _("With msvc ") << _MSC_VER << endl
-#endif
           << "(C) 2022-Present" << endl
           << "Gonzalo Garramuño & others" << endl
           << endl
-          << mrv::os::getVersion() << endl
-#ifdef __linux__
-          << mrv::os::getDesktop() << endl
+#if defined(__clang__)
+          << _("With clang ") << __clang__
+#    if defined(__llvm__)
+          << " " << __llvm__
+#    endif
+          << endl
+#elif defined(__GNUC__)
+          << _("With gcc ") << __GNUC__ << endl
+#else
+          << _("With msvc ") << _MSC_VER << endl
 #endif
+          << build_info() << endl
+          << running_info() << endl
           << endl
           << _("mrv2 depends on:") << endl
           << endl;
 #ifdef TLRENDER_OCIO
         const auto expat = XML_ExpatVersionInfo();
+#ifndef __APPLE__
+        o << "cpptrace v1.0" << endl
+          << "Copyright (C) 2023-2024 Jeremy Rifkin." << endl
+          << endl;
+#endif
         o << "expat v" << expat.major << "." << expat.minor << "."
           << expat.micro << endl
           << "Copyright (c) 1998-2000 Thai Open Source Software Center Ltd and "
@@ -779,6 +835,11 @@ namespace mrv
           << "Copyright (c) 2015 Viktor Szathmáry.  All Rights Reserved."
           << endl
           << endl;
+#ifdef TLRENDER_LIBPLACEBO
+        o << "libplacebo v" << pl_version() << std::endl
+          << "Copyright Niklas Haas et al." << std::endl
+          << std::endl;
+#endif
 #ifdef TLRENDER_RAW
         o << "LibRaw " << LIBRAW_VERSION_STR << endl
           << "Copyright (C) 2008-2021 LibRaw LLC (info@libraw.org)" << endl
@@ -813,12 +874,6 @@ namespace mrv
 #ifdef TLRENDER_TIFF
         o << TIFFLIB_VERSION_STR << endl << endl;
 #endif
-#ifdef __linux__
-        o << "libbacktrace v1.0" << endl
-          << "Copyright (C) 2012-2021 Free Software Foundation, Inc." << endl
-          << "Written by Ian Lance Taylor, Google." << endl
-          << endl;
-#endif
         o << "LibVPX" << endl
           << "Copyright (c) 2010, The WebM Project authors. All rights "
              "reserved."
@@ -834,7 +889,14 @@ namespace mrv
           << endl;
 #ifdef TLRENDER_NDI
         o << "NDI® " << NDIlib_version() << endl
+#    ifdef TLRENDER_NDI_ADVANCED
+          << "Advanced SDK"
+#    else
+          << "Normal SDK"
+#    endif
+          << endl
           << "Copyright (C) 2021-Present Vizrt NDI AB" << endl
+          << "NDI® is a registered trademark of Vizrt NDI AB" << endl
           << endl;
 #endif
         o << "nlohmann_json v" << NLOHMANN_JSON_VERSION_MAJOR << "."
@@ -1060,7 +1122,7 @@ Greg Ercolano                                 (FLTK 1.4 contributor,
                                                CollapsibleGroup widget,
                                                porting from fltk2.0 to 1.4)
 Ian MacArthur                                 (FLTK contributor, original
-                                               docking code)
+                                               docking code, See-Through code)
 Manolo Guoy                                   (FLTK 1,4 developer, macOS and
                                                Wayland)
 Matthias Melcher                              (FLTK 1.4 developer, macOS,
@@ -1096,6 +1158,8 @@ BigRoy                                        (Prores4444 debugging,
                                                UI improvement ideas,
                                                Python Debugging)
 bouncyferret                                  (Tablet debugging)
+cgene75                                       (Recent Files bug,
+                                               NFS issues, versioning regex)
 c0nvexo                                       (Color Pipeline on Missing
                                                Frames)
 Christoph Lohr                                (Color Pipeline Debugging,
@@ -1113,13 +1177,17 @@ JoelRVC                                       (Windows 11 scaling issues,
 Jose Quinteiro                                (Windows 10 checks)
 jrsndl                                        (Versioning debugging)
 jtomori                                       (OCIO pipeline ideas)
+kirillall                                     (OpenEXR DWAA/DWAB multithread bug)
 kursad-k                                      (Windows 11, Positioning)
 lucky3d                                       (Windows 10, Background Panel)
 lukas-remis                                   (Comparison issues)
+luzpaz                                        (Spelling corrections)  
 mantissa-                                     (Sequences misdetection)
 mhgandvisions                                 (Session debugging)
 MMmaoamao                                     (AV1 Suggestion)
 mzigaib                                       (Sequences misdetection)
+ndeebook                                      (Save Single Frame with
+                                               Annotations)
 Olympusmonsgames                              (Windows Build Debugging)
 p2or                                          (MacOS debugging,
                                                NTFS permissions bug,
@@ -1130,11 +1198,17 @@ qsek                                          (Drawing tools improvements)
 Rémi Achard                                   (OpenColorIO 2 color pipeline)
 Rennatt                                       (Color Pipeline Debugging)
 Roy Nieterau                                  (Python API)
+Runenash                                      (Bug in ghosting Secondary
+                                               window, loop in stepping
+                                               through annotations)
 shockerNY                                     (Text Annotation bug report)
 SteffenDuenner                                (Linux Build Debugging)
+The Maize                                     (Wayland issues, See-through
+                                               and Click-Through Functionality)
 throb                                         (Caching improvements)
 Todica Ionut                                  (UI improvements)
 Tomycj                                        (UI improvements)
+Viktor Holló                                  (Image Versioning bug)
 xiaopeng12138                                 (UTF-8 Debugging)
 
 )THANKS";

@@ -39,7 +39,7 @@ if(UNIX AND NOT APPLE)
     list(APPEND LIBRARIES "util" "c" )
 endif()
 
-add_executable(mrv2 WIN32 ${SOURCES} ${HEADERS})
+add_executable(mrv2 WIN32  ${SOURCES} ${HEADERS})
 
 target_link_libraries(mrv2 PUBLIC ${LIBRARIES} PRIVATE ${LIBRARIES_PRIVATE})
 target_link_directories( mrv2 BEFORE PUBLIC ${CMAKE_INSTALL_PREFIX}/lib /usr/local/lib )
@@ -119,13 +119,23 @@ endif()
 #
 if (MRV2_PYBIND11)
     if (NOT EXISTS "${MRV2_PYTHON_LIBS}/site-packages/requests")
-	execute_process( COMMAND ${PYTHON_EXECUTABLE} -m pip install --target "${MRV2_PYTHON_LIBS}/site-packages" requests --no-cache-dir )
+	execute_process( COMMAND ${CMAKE_COMMAND} -E env "DYLD_LIBRARY_PATH=${CMAKE_INSTALL_PREFIX}/lib" ${PYTHON_EXECUTABLE} -m pip install --target "${MRV2_PYTHON_LIBS}/site-packages" requests --no-cache-dir )
     endif()
 endif()
 
 if(TLRENDER_NDI)
+    # NDI libraries have two names: Advanced and normal.
+    # We use a glob to simplify and also for potential future development
+    # of NDI's SDK.
     if (WIN32)
-	install( FILES  ${TLRENDER_NDI_SDK}/bin/x64/Processing.NDI.Lib.x64.dll
+	if (TLRENDER_NDI_SDK MATCHES ".*Advanced.*")
+	    # Advanced lib is ${TLRENDER_NDI_SDK}/bin/x64/Processing.NDI.Lib.Advanced.x64.dll
+	    file( GLOB MRV2_LIB_DYLIBS ${TLRENDER_NDI_SDK}/bin/x64/Processing.NDI.Lib.Advanced.x64.dll )
+	else()
+	    # Normal lib is ${TLRENDER_NDI_SDK}/bin/x64/Processing.NDI.Lib.x64.dll
+	    file( GLOB MRV2_LIB_DYLIBS ${TLRENDER_NDI_SDK}/bin/x64/Processing.NDI.Lib.x64.dll )
+	endif()
+	install( FILES  ${MRV2_LIB_DYLIBS}
 	    DESTINATION bin
 	    COMPONENT applications )
     elseif (APPLE)
@@ -287,36 +297,47 @@ if ( NOT WIN32 )
     configure_file(${CMAKE_SOURCE_DIR}/bin/environment.sh.in
 	${CMAKE_INSTALL_PREFIX}/bin/environment.sh @ONLY)
     
-    # Configure python.sh with python version
-    configure_file(${CMAKE_SOURCE_DIR}/bin/python.sh.in
-	${CMAKE_INSTALL_PREFIX}/bin/python.sh @ONLY)
-
-    # Configure python.sh with python version
-    configure_file(${CMAKE_SOURCE_DIR}/bin/pip.sh.in
-	${CMAKE_INSTALL_PREFIX}/bin/pip.sh @ONLY)
-    
-    file(CHMOD ${CMAKE_INSTALL_PREFIX}/bin/python.sh
-        PERMISSIONS 
-        OWNER_READ OWNER_WRITE OWNER_EXECUTE
-        GROUP_READ GROUP_EXECUTE
-        WORLD_READ WORLD_EXECUTE )
-    
-    file(CHMOD ${CMAKE_INSTALL_PREFIX}/bin/pip.sh
-        PERMISSIONS 
-        OWNER_READ OWNER_WRITE OWNER_EXECUTE
-        GROUP_READ GROUP_EXECUTE
-        WORLD_READ WORLD_EXECUTE )
-    
     install( FILES
 	${CMAKE_SOURCE_DIR}/bin/mrv2.sh
 	${CMAKE_INSTALL_PREFIX}/bin/environment.sh
-	${CMAKE_INSTALL_PREFIX}/bin/python.sh
 	DESTINATION bin
         PERMISSIONS 
         OWNER_READ OWNER_WRITE OWNER_EXECUTE
         GROUP_READ GROUP_EXECUTE
         WORLD_READ WORLD_EXECUTE
 	COMPONENT applications )
+
+    if(BUILD_PYTHON)
+    	# Configure python.sh with python version
+	configure_file(${CMAKE_SOURCE_DIR}/bin/python.sh.in
+	${CMAKE_INSTALL_PREFIX}/bin/python.sh @ONLY)
+
+        # Configure pip.sh with python version
+	configure_file(${CMAKE_SOURCE_DIR}/bin/pip.sh.in
+	    ${CMAKE_INSTALL_PREFIX}/bin/pip.sh @ONLY)
+    
+	file(CHMOD ${CMAKE_INSTALL_PREFIX}/bin/python.sh
+            PERMISSIONS 
+            OWNER_READ OWNER_WRITE OWNER_EXECUTE
+            GROUP_READ GROUP_EXECUTE
+            WORLD_READ WORLD_EXECUTE )
+    
+	file(CHMOD ${CMAKE_INSTALL_PREFIX}/bin/pip.sh
+            PERMISSIONS 
+            OWNER_READ OWNER_WRITE OWNER_EXECUTE
+            GROUP_READ GROUP_EXECUTE
+            WORLD_READ WORLD_EXECUTE )
+    
+	install( FILES
+	    ${CMAKE_INSTALL_PREFIX}/bin/pip.sh
+	    ${CMAKE_INSTALL_PREFIX}/bin/python.sh
+	    DESTINATION bin
+            PERMISSIONS 
+            OWNER_READ OWNER_WRITE OWNER_EXECUTE
+            GROUP_READ GROUP_EXECUTE
+            WORLD_READ WORLD_EXECUTE
+	    COMPONENT applications )
+    endif()
 
     if(APPLE)
 	install( FILES
@@ -356,3 +377,11 @@ if(TLRENDER_USD)
         COMPONENT applications)
 endif()
 
+if (APPLE)
+    # Define variables for bundle directories in the build dir
+    set(MRV2_BUNDLE_DIR ${CMAKE_BINARY_DIR}/mrv2.app)
+
+    # Create the mrv2.app bundle structure
+    file(MAKE_DIRECTORY ${MRV2_BUNDLE_DIR}/Contents/MacOS)
+    file(MAKE_DIRECTORY ${MRV2_BUNDLE_DIR}/Contents/Resources)
+endif()

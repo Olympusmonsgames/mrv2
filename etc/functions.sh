@@ -39,10 +39,13 @@ get_kernel()
 
     if [[ $ARCH == "" ]]; then
 	export ARCH=`uname -m` # was uname -a
+	export UNAME_ARCH=$ARCH
     fi
 
     if [[ $ARCH == arm64 ]]; then
 	export ARCH=arm64
+    elif [[ $ARCH == aarch64 ]]; then
+	export ARCH=aarch64
     elif [[ $ARCH == *64* ]]; then
 	export ARCH=amd64
     else
@@ -116,13 +119,23 @@ locate_python()
     fi
 
     for location in $locations; do
-	export pythons=$(ls ${location}/python* 2> /dev/null) || PYTHON=""
+	local pythons=$(ls ${location}/python* 2> /dev/null) || PYTHON=""
 	if [[ "$pythons" != "" ]]; then
 	    pythons=`echo "$pythons" | sed -e 's#/python.sh##'`
 	    export PYTHONDIR=$location
-	    export PYTHONEXE=`echo "$pythons" | grep -o '/python.*' | head -1`
-	    export PYTHON=$PYTHONDIR/$PYTHONEXE
+	    export PYTHONEXE=`echo "$pythons" | grep -o '/python.exe' | head -1`
 	    if [[ $KERNEL != *Msys* ]]; then
+		export PYTHONEXE=`echo "$pythons" | grep -o '/python[0-9]*' | head -1`
+		export PYTHON=$PYTHONDIR/$PYTHONEXE
+		if [ ! -e $PYTHON ]; then
+		    export PYTHONEXE=`echo "$pythons" | grep -o '/python' | head -1`
+		    export PYTHON=$PYTHONDIR/$PYTHONEXE
+		    if [ ! -e $PYTHON ]; then
+			continue
+		    else
+			break
+		    fi
+		fi
 		while true; do
 		    if [[ -L $PYTHON ]]; then
 			export PYTHONEXE=`readlink ${PYTHON}`
@@ -131,13 +144,29 @@ locate_python()
 			break
 		    fi
 		done
+		break
+	    else
+		export PYTHON=$PYTHONDIR/$PYTHONEXE
+		if [ ! -e $PYTHON ]; then
+		    continue
+		fi
 	    fi
-	    break
 	fi
     done
 
-    if [[ "$PYTHONEXE" == "" ]]; then
-	echo "No python found!!! Please install it in your PATH"
+    if [[ "$PYTHON" == "" ]]; then
+	if [[ -z $BUILD_PYTHON ]]; then
+	    echo "No python found!!! Please install it in your PATH"
+	    exit 1
+	fi
+	export PYTHONDIR="${PWD}/${BUILD_DIR}/install/bin/"
+	if [[ $KERNEL != *Msys* ]]; then
+	    export PYTHONEXE=python3	
+	    export PYTHON=$PYTHONDIR/$PYTHONEXE
+	else
+	    export PYTHONEXE=python
+	    export PYTHON=$PYTHONDIR/$PYTHONEXE
+	fi
     fi
 
     export PYTHON_LIBDIR="-unknown-"
@@ -204,10 +233,11 @@ send_to_packages()
     local stage=$PWD/$BUILD_DIR/mrv2/src/mrv2-build
     local package=$stage/$1
     if [[ "$CMAKE_TARGET" != "" ]]; then
-	mkdir -p $PWD/packages
+	package_dir=$PWD/packages/$BUILD_DIR
+	mkdir -p $package_dir
 	if [[ -e $package ]]; then
-	    echo "Installing $package in $PWD/packages"
-	    run_cmd mv $package $PWD/packages
+	    echo "Installing $package in $package_dir"
+	    run_cmd mv $package $package_dir
 	else
 	    echo "ERROR package $1 was not created in $stage."
 	fi
@@ -216,6 +246,22 @@ send_to_packages()
     fi
 }
 
+
+# Function to ask the question and return 1 for yes, 0 for no
+# in response variable
+ask_question()
+{
+    while true; do
+	read -p "$1 (y/n): " answer
+	case "$answer" in
+	    [Yy]*)
+		response=1; break;;
+	    [Nn]*)
+		response=2; break;;
+	    *) echo "Please answer y or n." ;;
+	esac
+    done
+}
 
 #
 # Auxiliary function to ask to continue (y/n)

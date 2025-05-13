@@ -14,12 +14,19 @@
 
 namespace mrv
 {
+    //! Resolution to save
     enum class SaveResolution { kSameSize, kHalfSize, kQuarterSize };
+    
+    enum class SaveContents   { kDataWindow, kDisplayWindow };
 
     struct SaveOptions
     {
-        bool annotations = false;
-        bool video       = true;
+        bool annotations = false; // whether annotations should be saved
+        bool video = true;        // whether video should be shown
+                                  // If not, annotations are saved
+                                  // only.
+        bool saveVideo = true; // whether video should be saved.aitem // if not,
+                               // audio only is saved.
 
         SaveResolution resolution = SaveResolution::kSameSize;
 
@@ -37,12 +44,12 @@ namespace mrv
 #endif
 
 #ifdef TLRENDER_EXR
-        tl::exr::Compression exrCompression = tl::exr::Compression::ZIP;
+        Imf::Compression exrCompression = Imf::ZIP_COMPRESSION;
         tl::image::PixelType exrPixelType = tl::image::PixelType::RGBA_F16;
-#endif
+        SaveContents exrSaveContents = SaveContents::kDataWindow;
         int zipCompressionLevel = 4;
         float dwaCompressionLevel = 45.0F;
-
+#endif
         bool noRename = false;
     };
 } // namespace mrv

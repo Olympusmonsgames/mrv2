@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
-// Copyright (c) 2021-2023 Darby Johnston
-// All rights reserved.
+// mrv2
+// Copyright Contributors to the mrv2 Project. All rights reserved.
 
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Double_Window.H>
@@ -190,7 +190,7 @@ namespace mrv
             std::shared_ptr<image::Image> image;
         };
         ThumbnailData thumbnail;
-        
+
         Fl_Double_Window* thumbnailWindow = nullptr; // thumbnail window
         Fl_Box* box = nullptr;
 
@@ -356,9 +356,9 @@ namespace mrv
     void TimelineWidget::continuePlaying()
     {
         TLRENDER_P();
-            
+
         //
-        // Thie observer will watch the cache and start a reverse playback
+        // This observer will watch the cache and start a reverse playback
         // once it is filled.
         //
         p.cacheInfoObserver =
@@ -369,14 +369,12 @@ namespace mrv
                     TLRENDER_P();
 
                     const auto& time = p.player->currentTime();
-                    
+
                     const auto& cache =
                         p.player->player()->observeCacheOptions()->get();
                     const auto& rate = time.rate();
-                    const auto& readAhead =
-                        cache.readAhead.rescaled_to(rate);
-                    const auto& readBehind =
-                        cache.readBehind.rescaled_to(rate);
+                    const auto& readAhead = cache.readAhead.rescaled_to(rate);
+                    const auto& readBehind = cache.readBehind.rescaled_to(rate);
                     const auto& timeRange = p.player->inOutRange();
 
                     auto startTime = time + readBehind;
@@ -409,7 +407,8 @@ namespace mrv
                         if (t.start_time() <= startTime &&
                             t.end_time_exclusive() >= endTime)
                         {
-                            p.ui->uiView->setPlayback(timeline::Playback::Reverse);
+                            p.ui->uiView->setPlayback(
+                                timeline::Playback::Reverse);
                             p.cacheInfoObserver.reset();
                             return;
                         }
@@ -531,8 +530,7 @@ namespace mrv
     void TimelineWidget::repositionThumbnail()
     {
         TLRENDER_P();
-        if (p.thumbnailWindow &&
-            Fl::belowmouse() == this && p.player &&
+        if (p.thumbnailWindow && Fl::belowmouse() == this && p.player &&
             p.ui->uiPrefs->uiPrefsTimelineThumbnails->value())
         {
             int X, Y, W, H;
@@ -589,9 +587,10 @@ namespace mrv
 
         if (auto thumbnailSystem = p.thumbnailSystem.lock())
         {
-            p.thumbnail.request = thumbnailSystem->getThumbnail(path, size.h, time);
+            p.thumbnail.request =
+                thumbnailSystem->getThumbnail(path, size.h, time);
         }
-        
+
         timeToText(buffer, time, _p->units);
         p.box->copy_label(buffer);
         return 1;
@@ -600,16 +599,16 @@ namespace mrv
     void TimelineWidget::_cancelThumbnailRequests()
     {
         TLRENDER_P();
-        
+
         if (auto thumbnailSystem = p.thumbnailSystem.lock())
         {
             if (p.thumbnail.request.future.valid())
             {
-                thumbnailSystem->cancelRequests({ p.thumbnail.request.id });
+                thumbnailSystem->cancelRequests({p.thumbnail.request.id});
             }
         }
     }
-    
+
     timelineui::ItemOptions TimelineWidget::getItemOptions() const
     {
         return _p->timelineWidget->getItemOptions();
@@ -628,7 +627,7 @@ namespace mrv
         p.player = player;
 
         p.annotationTimes.clear();
-        
+
         if (player)
         {
             const auto innerPlayer = player->player();
@@ -682,12 +681,11 @@ namespace mrv
         _p->timelineWidget->setMouseWheelScale(value);
     }
 
-    void
-    TimelineWidget::setItemOptions(const timelineui::ItemOptions& value)
+    void TimelineWidget::setItemOptions(const timelineui::ItemOptions& value)
     {
         _p->timelineWidget->setItemOptions(value);
     }
-    
+
     void
     TimelineWidget::setDisplayOptions(const timelineui::DisplayOptions& value)
     {
@@ -727,11 +725,13 @@ namespace mrv
                     "in vec2 fTexture;\n"
                     "out vec4 fColor;\n"
                     "\n"
+                    "uniform float opacity;\n"
                     "uniform sampler2D textureSampler;\n"
                     "\n"
                     "void main()\n"
                     "{\n"
                     "    fColor = texture(textureSampler, fTexture);\n"
+                    "    fColor.a *= opacity;\n"
                     "}\n";
                 p.shader = gl::Shader::create(vertexSource, fragmentSource);
                 CHECK_GL;
@@ -860,7 +860,10 @@ namespace mrv
             }
         }
 
-        if (p.ui->uiPrefs->uiPrefsBlitTimeline->value() == kNoBlit)
+        const float alpha = p.ui->uiMain->get_alpha() / 255.0F;
+
+        if (p.ui->uiPrefs->uiPrefsBlitTimeline->value() == kNoBlit ||
+            alpha < 1.0F)
         {
             glViewport(0, 0, renderSize.w, renderSize.h);
             glClearColor(0.F, 0.F, 0.F, 0.F);
@@ -873,6 +876,11 @@ namespace mrv
                     0.F, static_cast<float>(renderSize.w), 0.F,
                     static_cast<float>(renderSize.h), -1.F, 1.F);
                 p.shader->setUniform("transform.mvp", pm);
+                p.shader->setUniform("opacity", alpha);
+
+#ifdef __APPLE__
+                set_window_transparency(alpha);
+#endif
 
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, p.buffer->getColorID());
@@ -1511,9 +1519,10 @@ namespace mrv
 
         if (p.thumbnailWindow && !p.thumbnailWindow->visible())
             return;
-        
+
         if (p.thumbnail.request.future.valid() &&
-            p.thumbnail.request.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+            p.thumbnail.request.future.wait_for(std::chrono::seconds(0)) ==
+                std::future_status::ready)
         {
             if (auto image = p.thumbnail.request.future.get())
             {
@@ -1540,7 +1549,6 @@ namespace mrv
                 }
             }
         }
-        
     }
 
     void TimelineWidget::timerEvent()
@@ -1670,9 +1678,7 @@ namespace mrv
         return key;
     }
 
-    void TimelineWidget::_styleUpdate()
-    {
-    }
+    void TimelineWidget::_styleUpdate() {}
 
     otime::RationalTime TimelineWidget::_posToTime(int value) noexcept
     {
@@ -1690,7 +1696,8 @@ namespace mrv
             out = (p.timeRange.start_time() +
                    otime::RationalTime(
                        p.timeRange.duration().value() * normalized,
-                       p.timeRange.duration().rate())).round();
+                       p.timeRange.duration().rate()))
+                      .round();
             out = math::clamp(
                 out, p.timeRange.start_time(),
                 p.timeRange.end_time_inclusive());

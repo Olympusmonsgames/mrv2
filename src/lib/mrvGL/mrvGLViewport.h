@@ -25,7 +25,7 @@ namespace mrv
         Viewport(int X, int Y, int W, int H, const char* L = 0);
         ~Viewport();
 
-        //! Virual draw method
+        //! Virtual draw method
         void draw() override;
 
         //! Virtual handle event method
@@ -41,6 +41,9 @@ namespace mrv
         void _initializeGL();
         void _initializeGLResources();
 
+        void _createPBOs(const math::Size2i& renderSize);
+        void _createOverlayPBO(const math::Size2i& renderSize);
+        
         void _createCubicEnvironmentMap();
 
         void _createSphericalEnvironmentMap();
@@ -74,16 +77,20 @@ namespace mrv
 
         void _drawCropMask(const math::Size2i& renderSize) const noexcept;
 
-        void _drawHUD() const noexcept;
+        void _drawHUD(float alpha) const noexcept;
 
         void _drawCursor(const math::Matrix4x4f& mvp) const noexcept;
 
         void _drawAnnotations(
-            const math::Matrix4x4f& mvp, const otime::RationalTime& time,
-            const std::vector<std::shared_ptr<draw::Annotation>>& annotations);
+            const std::shared_ptr<tl::gl::OffscreenBuffer>& overlay,
+            const math::Matrix4x4f& renderMVP,
+            const otime::RationalTime& time,
+            const std::vector<std::shared_ptr<draw::Annotation>>& annotations,
+            const math::Size2i& renderSize);
 
 #ifdef USE_OPENGL2
-        void _drawGL2TextShapes();
+        void _drawGL1TextShapes(const tl::math::Matrix4x4f&,
+                                const double viewZoom);
 #endif
 
         void _pushAnnotationShape(const std::string& cmd) const override;
@@ -115,6 +122,19 @@ namespace mrv
 
         void _drawWindowArea(const std::string&) const noexcept;
 
+        void _compositeAnnotations(
+            const math::Matrix4x4f& shaderMatrix,
+            const math::Size2i& viewportSize);
+        
+        void _compositeAnnotations(
+            const std::shared_ptr<tl::gl::OffscreenBuffer>&,
+            const math::Matrix4x4f& orthoMatrix,
+            const math::Size2i& viewportSize);
+        
+        void _compositeOverlay(const std::shared_ptr<tl::gl::OffscreenBuffer>&,
+                               const math::Matrix4x4f& identity,
+                               const math::Size2i& viewportSize);
+        
     private:
         struct GLPrivate;
         std::unique_ptr<GLPrivate> _gl;

@@ -13,6 +13,8 @@
 
 #include "mrvCore/mrvI8N.h"
 
+#include "mrvFl/mrvPreferences.h"
+
 namespace mrv
 {
 
@@ -95,39 +97,52 @@ namespace mrv
 
 } // namespace mrv
 
-#define mrvLOG_ERROR(mod, msg)                                                 \
-    do                                                                         \
-    {                                                                          \
-        mrv::trace::error << _("ERROR: ") << "[" << mod << "] " << msg;        \
+// Log an error
+#define mrvLOG_ERROR(mod, msg)                                          \
+    do                                                                  \
+    {                                                                   \
+        mrv::trace::error << _("ERROR:\t") << "[" << mod << "] " << msg; \
     } while (0)
-#define mrvLOG_WARNING(mod, msg)                                               \
-    do                                                                         \
-    {                                                                          \
-        mrv::trace::warn << _("WARN : ") << "[" << mod << "] " << msg;         \
+
+// Log a warning
+#define mrvLOG_WARNING(mod, msg)                                        \
+    do                                                                  \
+    {                                                                   \
+        mrv::trace::warn << _("WARN:\t") << "[" << mod << "] " << msg;  \
     } while (0)
-#define mrvLOG_INFO(mod, msg)                                                  \
-    do                                                                         \
-    {                                                                          \
-        mrv::trace::info << "       [" << mod << "] " << msg;                  \
+
+// Log if verbosity is more than 0
+#define mrvLOG_INFO(mod, msg)                                           \
+    do                                                                  \
+    {                                                                   \
+        if (mrv::Preferences::logLevel > 0)                             \
+            mrv::trace::info << "       \t[" << mod << "] " << msg;       \
+    } while (0)
+
+// Log out always
+#define mrvLOG_STATUS(mod, msg)                                         \
+    do                                                                  \
+    {                                                                   \
+        mrv::trace::info << "       \t[" << mod << "] " << msg;           \
     } while (0)
 
 #define LOG_ERROR(msg) mrvLOG_ERROR(kModule, msg << std::endl)
 #define LOG_WARNING(msg) mrvLOG_WARNING(kModule, msg << std::endl)
 #define LOG_INFO(msg) mrvLOG_INFO(kModule, msg << std::endl)
+#define LOG_STATUS(msg) mrvLOG_STATUS(kModule, msg << std::endl)
 #define LOG_DEBUG(msg)                                                         \
     mrvLOG_INFO(                                                               \
         kModule, __FUNCTION__ << "(" << __LINE__ << ") " << msg << std::endl)
 
 #if defined(NDEBUG)
-#    define DBGM3(msg)
-#    define DBGM2(msg)
-#    define DBGM1(msg)
-#    define DBGM0(msg)
-#    define DBG3
-#    define DBG2
-#    define DBG
-#else
-#    include "mrvFl/mrvPreferences.h"
+// #    define DBGM3(msg)
+// #    define DBGM2(msg)
+// #    define DBGM1(msg)
+// #    define DBGM0(msg)
+// #    define DBG3
+// #    define DBG2
+// #    define DBG
+// #else
 #    define DBGM3(msg)                                                         \
         do                                                                     \
         {                                                                      \

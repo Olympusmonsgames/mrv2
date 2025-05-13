@@ -19,6 +19,16 @@ namespace mrv
         using tl::file::Path;
         using tl::file::PathOptions;
 
+        /** 
+         * Given a path with backslashes (\) returns a string with forward
+         * slashes / replaced.
+         * 
+         * @param path path with backslashes
+         * 
+         * @return normalized path
+         */
+        std::string normalizePath(const std::string& path);
+        
         /**
          * Given a tlRender's path, return whether the file can be loaded by
          * tlRender.
@@ -125,6 +135,15 @@ namespace mrv
          */
         bool isDirectory(const std::string& directory);
 
+        /**
+         * Return true if the file exists and is readable
+         *
+         * @param p std::filesystem path (or std::string).
+         *
+         * @return true if it exists and is readable, false if not.
+         */
+        bool exists(const fs::path& path);
+        
         /**
          * Return true if the file exists and is readable
          *

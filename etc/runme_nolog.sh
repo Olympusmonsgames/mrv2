@@ -35,6 +35,10 @@ if [ -z "$BUILD_X11" ]; then
     export BUILD_X11=ON
 fi
 
+if [ -z "$MRV2_HDR" ]; then
+    export MRV2_HDR=OFF
+fi
+
 if [ -z "$MRV2_PYFLTK" ]; then
     export MRV2_PYFLTK=ON
 fi
@@ -52,16 +56,33 @@ if [ -z "$MRV2_PDF" ]; then
 fi
 
 if [ -z "$MRV2_PYTHON" ]; then
-    export MRV2_PYTHON=$PYTHONEXE
-    export TLRENDER_USD_PYTHON=$PYTHONEXE
+    if [[ $BUILD_PYTHON == ON || $BUILD_PYTHON == 1 ]]; then
+	if [[ $KERNEL == *Msys* ]]; then
+	    export PYTHONEXE=python.exe
+	else
+	    export PYTHONEXE=python3
+	fi
+	export PYTHON="${PWD}/${BUILD_DIR}/install/bin/${PYTHONEXE}"
+    else
+	locate_python
+    fi
+    export MRV2_PYTHON=$PYTHON
+    export TLRENDER_USD_PYTHON=$PYTHON
 else
     export TLRENDER_USD_PYTHON=$MRV2_PYTHON
-    export PYTHONEXE=$MRV2_PYTHON
+    export PYTHON=$MRV2_PYTHON
 fi
 
 #
 # These are some of the expensive TLRENDER options
 #
+
+if [[ -z "$TLRENDER_API" ]]; then
+    export TLRENDER_API=GL_4_1
+    if [[ "$CMAKE_BUILD_TYPE" == "Debug" ]]; then
+	export TLRENDER_API=GL_4_1_Debug
+    fi
+fi
 
 if [ -z "$TLRENDER_ASAN" ]; then
     export TLRENDER_ASAN=OFF # asan memory debugging (not yet working)
@@ -73,6 +94,10 @@ fi
 
 if [ -z "$TLRENDER_EXR" ]; then
     export TLRENDER_EXR=ON
+fi
+
+if [ -z "$TLRENDER_GL" ]; then
+    export TLRENDER_GL=ON
 fi
 
 if [ -z "$TLRENDER_HAP" ]; then
@@ -91,24 +116,33 @@ if [ -z "$TLRENDER_FFMPEG_MINIMAL" ]; then
     export TLRENDER_FFMPEG_MINIMAL=ON
 fi
 
+if [ -z "$TLRENDER_LIBPLACEBO" ]; then
+    if [[ $TLRENDER_FFMPEG == ON || $TLRENDER_FFMPEG == 1 ]]; then
+	export TLRENDER_LIBPLACEBO=ON
+    else
+	export TLRENDER_LIBPLACEBO=OFF
+    fi
+fi
+
+if [ -z "$TLRENDER_LOCAL" ]; then
+    export TLRENDER_LOCAL=OFF
+fi
+
 if [ -z "$TLRENDER_NDI_SDK" ]; then
     if [[ $KERNEL == *Linux* ]]; then
-	export TLRENDER_NDI_SDK="$HOME/code/lib/NDI SDK for Linux/"
+	export TLRENDER_NDI_SDK="$HOME/code/lib/NDI Advanced SDK for Linux/"
     elif [[ $KERNEL == *Msys* ]]; then
-	export TLRENDER_NDI_SDK="C:/Program Files/NDI/NDI 6 SDK/"
+	export TLRENDER_NDI_SDK="C:/Program Files/NDI/NDI 6 Advanced SDK/"
     else
-	export TLRENDER_NDI_SDK="/Library/NDI SDK for Apple/"
+	export TLRENDER_NDI_SDK="/Library/NDI Advanced SDK for Apple/"
     fi
 fi
 
 if [ -z "$TLRENDER_NDI" ]; then
     if [ -d "${TLRENDER_NDI_SDK}" ]; then
 	export TLRENDER_NDI=ON
-    fi
-fi
-
-if [[ $TLRENDER_NDI == ON || $TLRENDER_NDI == 1 ]]; then
-    if [[ $TLRENDER_FFMPEG != ON && $TLRENDER_FFMPEG != 1 ]]; then
+    else
+	echo "TLRENDER_NDI_SDK not found at ${TLRENDER_NDI_SDK}!"
 	export TLRENDER_NDI=OFF
     fi
 fi
@@ -125,20 +159,56 @@ if [ -z "$TLRENDER_STB" ]; then
     export TLRENDER_STB=ON
 fi
 
+if [ -z "$TLRENDER_SVTAV1" ]; then
+    export TLRENDER_SVTAV1=ON
+fi
+
 if [ -z "$TLRENDER_TIFF" ]; then
     export TLRENDER_TIFF=ON
 fi
 
 if [ -z "$TLRENDER_USD" ]; then
     export TLRENDER_USD=ON
-    #
-    # USD crashes on Windows on Debug mode.
-    #
-    if [[ $KERNEL == *Msys* && $CMAKE_BUILD_TYPE == "Debug" ]]; then
-	export TLRENDER_USD=OFF
+fi
+
+if [ -z "$VULKAN_SDK" ]; then
+    export VULKAN_SDK=/crapola_of_dir
+    if [[ $KERNEL == *Msys* ]]; then
+	export VULKAN_SDK=/C/VulkanSDK
+    elif [[ $KERNEL == *Linux* ]]; then
+	if [[ -d VulkanSDK ]]; then
+	    export VULKAN_ROOT=$PWD/VulkanSDK
+	    SDK_VERSION=$(ls -d ${VULKAN_ROOT}/* | sort -r | grep -o "$VULKAN_ROOT/[0-9]*\..*"| sed -e "s#$VULKAN_ROOT/##" | head -1)
+	    export VULKAN_SDK=$VULKAN_ROOT/$SDK_VERSION/
+	else
+	    export VULKAN_SDK=/usr/
+	fi
+    elif [[ $KERNEL == *Darwin* ]]; then
+	VULKAN_ROOT=$HOME/VulkanSDK
+	if [ -d "$VULKAN_ROOT" ]; then
+	    SDK_VERSION=$(ls -d ${VULKAN_ROOT}/* | sort -r | grep -o "$VULKAN_ROOT/[0-9]*\..*"| sed -e "s#$VULKAN_ROOT/##" | head -1)
+	    export VULKAN_SDK=$VULKAN_ROOT/$SDK_VERSION/macOS
+	else
+	    export VULKAN_SDK=/usr/local
+	fi
+    fi
+fi
+    
+if [ -z "$TLRENDER_VK" ]; then
+    if [ -d "${VULKAN_SDK}/include/vulkan/" ]; then
+	export TLRENDER_VK=ON
+    else
+	export TLRENDER_VK=OFF
+	echo "VULKAN NOT FOUND at ${VULKAN_SDK}/include/vulkan"
+    fi
+else
+    if [ ! -d "${VULKAN_SDK}/include/vulkan/" ]; then
+	echo "VULKAN NOT FOUND at ${VULKAN_SDK}/include/vulkan"
+	exit 1
     fi
 fi
 
+    
 if [ -z "$TLRENDER_VPX" ]; then
     export TLRENDER_VPX=ON
 fi
@@ -166,6 +236,11 @@ if [ -z "$FLTK_BUILD_SHARED" ]; then
     fi
 fi
 
+#
+# Clean python path to avoid clashes, mainly, with macOS meson
+#
+unset PYTHONPATH
+
 echo
 echo
 echo "Building summary"
@@ -189,7 +264,20 @@ if [[ $KERNEL == *Msys* ]]; then
     fi
     nsis_version=`"${nsis_exe}" -version`
     echo "NSIS ${nsis_version}"
+    if [[ $TLRENDER_LIBPLACEBO == 1 || $TLRENDER_LIBPLACEBO == ON ]]; then
+	if command -v clang > /dev/null 2>&1; then
+	    clang_exe=clang.exe
+	    ${clang_exe} --version
+	else
+	    echo
+	    echo "clang.exe NOT found!!! Cannot compile libplacebo."
+	    echo "Please re-install MSVC with Clang turned on."
+	    echo
+	    exit 1
+	fi
+    fi
 fi
+
 
 mkdir -p $BUILD_DIR/install
 
@@ -214,6 +302,9 @@ echo "Build FLTK shared................... ${FLTK_BUILD_SHARED} 	(FLTK_BUILD_SHA
 echo "Build embedded Python............... ${MRV2_PYBIND11} 	(MRV2_PYBIND11)"
 echo "Build mrv2 Network connections...... ${MRV2_NETWORK} 	(MRV2_NETWORK)"
 echo "Build PDF........................... ${MRV2_PDF} 	(MRV2_PDF)"
+if [[ $MRV2_HDR == ON || $MRV2_HDR == 1 ]]; then
+    echo "MRV2_HDR............................ ${MRV2_HDR} 	(MRV2_HDR)"
+fi
 echo
 echo "tlRender Options"
 echo
@@ -223,10 +314,12 @@ if [[ $TLRENDER_FFMPEG == ON || $TLRENDER_FFMPEG == 1 ]]; then
     echo "FFmpeg License ..................... ${FFMPEG_GPL} 	(Use -gpl flag)"
     echo "    FFmpeg minimal.................. ${TLRENDER_FFMPEG_MINIMAL}         (TLRENDER_FFMPEG_MINIMAL)"
     echo "    FFmpeg network support ......... ${TLRENDER_NET} 	(TLRENDER_NET)"
-    echo "    AV1 codec support .............. ${TLRENDER_AV1} 	(TLRENDER_AV1)"
+    echo "    dav1d decodec support .......... ${TLRENDER_AV1} 	(TLRENDER_AV1)"
+    echo "    SvtAv1 codec support. .......... ${TLRENDER_SVTAV1} 	(TLRENDER_SVTAV1)"
     echo "    HAP codec support .............. ${TLRENDER_HAP} 	(TLRENDER_HAP)"
     echo "    VPX codec support .............. ${TLRENDER_VPX} 	(TLRENDER_VPX)"
     echo "    X264 codec support ............. ${TLRENDER_X264} 	(Use -gpl flag)"
+    echo "    libplacebo support ............. ${TLRENDER_LIBPLACEBO}         (TLRENDER_LIBPLACEBO)"
     echo "    YASM assembler ................. ${TLRENDER_YASM} 	(TLRENDER_YASM)"
 fi
 echo
@@ -234,6 +327,9 @@ echo
 echo "NDI support ........................ ${TLRENDER_NDI} 	(TLRENDER_NDI)"
 if [[ $TLRENDER_NDI == ON || $TLRENDER_NDI == 1 ]]; then
     echo "NDI SDK ${TLRENDER_NDI_SDK} 	(TLRENDER_NDI_SDK}"
+    if [[ $TLRENDER_VK == ON ]]; then
+	echo "VULKAN_SDK    .................. ${VULKAN_SDK} 	(env. variable)"
+    fi
 fi
 
 echo
@@ -242,6 +338,7 @@ echo "LibRaw support ..................... ${TLRENDER_RAW} 	(TLRENDER_RAW)"
 echo "OpenEXR support .................... ${TLRENDER_EXR} 	(TLRENDER_EXR)"
 echo "STB support (TGA, BMP, PSD) ........ ${TLRENDER_STB} 	(TLRENDER_STB)"
 echo "TIFF support ....................... ${TLRENDER_TIFF} 	(TLRENDER_TIFF)"
+echo "tlRender API ....................... ${TLRENDER_API} 	(TLRENDER_API)"
 echo "USD support ........................ ${TLRENDER_USD} 	(TLRENDER_USD)"
 
 if [[ $ASK_TO_CONTINUE == 1 ]]; then
@@ -256,6 +353,15 @@ mkdir -p $BUILD_DIR/install
 #
 if [[ $KERNEL == *Msys* ]]; then
     . $PWD/etc/windows/compile_dlls.sh
+fi
+
+if command -v swig > /dev/null 2>&1; then
+    swig -version
+else
+    echo
+    echo "swig NOT found!!! Cannot compile pyFLTK."
+    echo
+    exit 1
 fi
 
 #
@@ -277,6 +383,7 @@ cmd="cmake -G '${CMAKE_GENERATOR}'
 	   -D BUILD_X11=${BUILD_X11}
 	   -D BUILD_WAYLAND=${BUILD_WAYLAND}
 
+	   -D MRV2_HDR=${MRV2_HDR}
 	   -D MRV2_NETWORK=${MRV2_NETWORK}
 	   -D MRV2_PYFLTK=${MRV2_PYFLTK}
 	   -D MRV2_PYBIND11=${MRV2_PYBIND11}
@@ -284,21 +391,27 @@ cmd="cmake -G '${CMAKE_GENERATOR}'
 
 	   -D FLTK_BUILD_SHARED=${FLTK_BUILD_SHARED}
 
+           -D TLRENDER_API=${TLRENDER_API}
            -D TLRENDER_ASAN=${TLRENDER_ASAN}
            -D TLRENDER_AV1=${TLRENDER_AV1}
            -D TLRENDER_EXR=${TLRENDER_EXR}
            -D TLRENDER_FFMPEG=${TLRENDER_FFMPEG}
            -D TLRENDER_FFMPEG_MINIMAL=${TLRENDER_FFMPEG_MINIMAL}
+	   -D TLRENDER_GL=${TLRENDER_GL}
            -D TLRENDER_HAP=${TLRENDER_HAP}
            -D TLRENDER_JPEG=${TLRENDER_JPEG}
+           -D TLRENDER_LIBPLACEBO=${TLRENDER_LIBPLACEBO}
+           -D TLRENDER_LOCAL=${TLRENDER_LOCAL}
 	   -D TLRENDER_NDI=${TLRENDER_NDI}
 	   -D TLRENDER_NDI_SDK=\"${TLRENDER_NDI_SDK}\"
 	   -D TLRENDER_NET=${TLRENDER_NET}
 	   -D TLRENDER_NFD=OFF
 	   -D TLRENDER_RAW=${TLRENDER_RAW}
            -D TLRENDER_STB=${TLRENDER_STB}
+           -D TLRENDER_SVTAV1=${TLRENDER_SVTAV1}
 	   -D TLRENDER_TIFF=${TLRENDER_TIFF}
 	   -D TLRENDER_USD=${TLRENDER_USD}
+	   -D TLRENDER_VK=${TLRENDER_VK}
 	   -D TLRENDER_VPX=${TLRENDER_VPX}
 	   -D TLRENDER_WAYLAND=${TLRENDER_WAYLAND}
            -D TLRENDER_X11=${TLRENDER_X11}

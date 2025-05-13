@@ -8,12 +8,8 @@ include( ExternalProject )
 include(ProcessorCount)
 ProcessorCount(NPROCS)
 
-
 set( Python_VERSION 3.11 )
 set( Python_TINY    9 )
-
-#set( Python_VERSION 3.12 )
-#set( Python_TINY   3 )
 
 set( Python_URL https://www.python.org/ftp/python/${Python_VERSION}.${Python_TINY}/Python-${Python_VERSION}.${Python_TINY}.tar.xz )
 
@@ -29,6 +25,7 @@ set( Python_ENV )
 set( Python_PATH $ENV{PATH} )
 if(APPLE)
 
+    set(Python_DYLD_LIBRARY_PATH $ENV{DYLD_LIBRARY_PATH})
     set(Python_C_FLAGS "${CMAKE_C_FLAGS}" )
     set(Python_CXX_FLAGS "${CMAKE_CXX_FLAGS}" )
     set(Python_LD_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}" )
@@ -50,18 +47,28 @@ if(APPLE)
 	if(openssl_prefix_error)
 	    message(FATAL_ERROR "Could not located openssl with 'brew --prefix openssl'.  Error: ${openssl_prefix_error}")
 	endif()
+	
     endif()
     
-    set( Python_CONFIGURE ${CMAKE_COMMAND} -E env "CFLAGS=${Python_C_FLAGS}" "CPPFLAGS=${Python_C_FLAGS}" "CXXFLAGS=${Python_CXX_FLAGS}" "LDFLAGS=${Python_LD_FLAGS}" -- ./configure --enable-optimizations --enable-shared --with-openssl=${_openssl_LOC} --prefix=${CMAKE_INSTALL_PREFIX}
+    set(Python_PATCH
+	COMMAND
+	${CMAKE_COMMAND} -E copy_if_different
+	"${PROJECT_SOURCE_DIR}/cmake/patches/Python-patch/configure"
+	"${CMAKE_BINARY_DIR}/deps/Python/src/Python/"
+	COMMAND chmod 0755 "${CMAKE_BINARY_DIR}/deps/Python/src/Python/configure"
     )
-    set( Python_BUILD  make -j ${NPROCS} )
+    
+    set( Python_ENV ${CMAKE_COMMAND} -E env "DYLD_LIBRARY_PATH=${CMAKE_INSTALL_PREFIX}/lib:${Python_DYLD_LIBRARY_PATH}" -- )
+    set( Python_CONFIGURE ${CMAKE_COMMAND} -E env "CFLAGS=${Python_C_FLAGS}" "CPPFLAGS=${Python_C_FLAGS}" "CXXFLAGS=${Python_CXX_FLAGS}" "LDFLAGS=${Python_LD_FLAGS}" "CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}" -- ./configure --enable-optimizations --enable-shared --with-openssl=${_openssl_LOC} --prefix=${CMAKE_INSTALL_PREFIX}
+    )
+    set( Python_BUILD make -j ${NPROCS} )
     set( Python_INSTALL
 	COMMAND make -j ${NPROCS} install
-	COMMAND ${Python_EXECUTABLE} -m ensurepip --upgrade )
-    set( Python_INSTALL  make -j ${NPROCS} install )
+	COMMAND ${Python_ENV} ${Python_EXECUTABLE} -m ensurepip --upgrade)
 
 elseif(UNIX)
 
+    set(Python_LD_LIBRARY_PATH $ENV{LD_LIBRARY_PATH})
     set(Python_C_FLAGS "${CMAKE_C_FLAGS}" )
     set(Python_CXX_FLAGS "${CMAKE_CXX_FLAGS}" )
     set(Python_LD_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}" )
@@ -71,12 +78,16 @@ elseif(UNIX)
 	--enable-shared
         --prefix=${CMAKE_INSTALL_PREFIX}
     )
-    set( Python_BUILD   make -j ${NPROCS} )
+    set( Python_ENV ${CMAKE_COMMAND} -E env "LD_LIBRARY_PATH=${CMAKE_INSTALL_PREFIX}/lib:${Python_LD_LIBRARY_PATH}" -- )
+    set( Python_BUILD ${Python_ENV} make -j ${NPROCS} )
     set( Python_INSTALL
-	COMMAND make -j ${NPROCS} install
-	COMMAND ${Python_EXECUTABLE} -m ensurepip --upgrade )
+	COMMAND ${Python_ENV} make -j ${NPROCS} install
+	COMMAND ${Python_ENV} ${Python_EXECUTABLE} -m ensurepip --upgrade 
+	COMMAND ${Python_ENV} ${Python_EXECUTABLE} -m pip install meson)
 else()
 
+    set( Python_DEPENDENCIES )
+    
     set( platform x64 )
     if( "$ENV{ARCH}" STREQUAL "i386" )
     	set( platform Win32 )
@@ -108,7 +119,8 @@ else()
     
     set(Python_INSTALL
 	COMMAND ${CMAKE_COMMAND} -D Python_COMMAND=install ${Python_SCRIPT}
-	COMMAND ${CMAKE_COMMAND} -D Python_COMMAND=pip ${Python_SCRIPT})
+	COMMAND ${CMAKE_COMMAND} -D Python_COMMAND=pip ${Python_SCRIPT}
+	COMMAND ${CMAKE_COMMAND} -D Python_COMMAND=meson ${Python_SCRIPT})
 endif()
 
 ExternalProject_Add(
@@ -122,6 +134,16 @@ ExternalProject_Add(
     BUILD_IN_SOURCE 1
 )
 
+set(TLRENDER_USD_PYTHON ${Python_EXECUTABLE})
+
+if (WIN32)
+    set( ENV{PATH} "${CMAKE_INSTALL_PREFIX}/bin;${CMAKE_INSTALL_PREFIX}/bin/Scripts/;$ENV{PATH}" )
+else()
+    set( ENV{PATH} "${CMAKE_INSTALL_PREFIX}/bin:$ENV{PATH}" )
+    if (UNIX AND NOT APPLE)
+	set( ENV{PYTHONPATH} "${CMAKE_INSTALL_PREFIX}/lib/python${Python_VERSION}:${CMAKE_INSTALL_PREFIX}/lib/python${Python_VERSION}/site-packages:$ENV{PYTHONPATH}" )
+    endif()
+endif()
 
 set( PYTHON_DEP Python )
 

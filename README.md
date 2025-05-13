@@ -1,6 +1,6 @@
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Build Status](https://github.com/ggarra13/mrv2/actions/workflows/full_linux.yml/badge.svg)](https://github.com/ggarra13/mrv2/actions/workflows/full_linux.yml)
-[![Build Status](https://github.com/ggarra13/mrv2/actions/workflows/full_macos12.yml/badge.svg)](https://github.com/ggarra13/mrv2/actions/workflows/full_macos12.yml)
+[![Build Status](https://github.com/ggarra13/mrv2/actions/workflows/full_macos13.yml/badge.svg)](https://github.com/ggarra13/mrv2/actions/workflows/full_macos13.yml)
 [![Build Status](https://github.com/ggarra13/mrv2/actions/workflows/full_win64.yml/badge.svg)](https://github.com/ggarra13/mrv2/actions/workflows/full_win64.yml)
 [![Build Status](https://github.com/ggarra13/mrv2/actions/workflows/full_macos14.yml/badge.svg)](https://github.com/ggarra13/mrv2/actions/workflows/full_macos14.yml)
 [![Donate](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=679N8GWCNDFSJ)
@@ -59,10 +59,13 @@ The source forge site also hosts beta builds (nightly builds with the latest cha
 
 [SourceForge Betas](https://sourceforge.net/projects/mrv2/files/beta)
 
+The Linux releases are built on Rocky Linux 8.10 using SCL so that's the preferred OS for installation.
+The Linux beta builds are built on Ubuntu 22.04, so that's the preferred OS for
+installation.
 
 ## Compatibility
 
-mrv2 binaries run on Windows 8.1+, RedHat 8.9+ or Ubuntu 20.04+ and macOS 11.0+.
+mrv2 binaries run on Windows 8.1+, RedHat 8.10+ or Ubuntu 22.04+, and macOS 11.0+.
 
 ## Notes on installation
 
@@ -72,10 +75,12 @@ mrv2 binaries run on Windows 8.1+, RedHat 8.9+ or Ubuntu 20.04+ and macOS 11.0+.
   The macOS application is currently not notarized, so when you launch it you
   will not be able to run it as macOS will warn you that the file is not secure
   as it was downloaded from internet.
-  To avoid that, you need to open the Finder, go to the Applications directory
-  and CTRL + Left mouse click on the mrv2 application.  That will bring up
-  the same warning, but this time it will have a button that will allow you
-  to open it.  You only need to do this once.
+  To avoid that, you need to open the Apple Logo->Settings->Privacy and Security
+  and go to Security and allow "Opening Anyway".
+  Alternatively, you can do it from the Terminal, by:
+  
+  sudo xattr -rd com.apple.quarantine /Applications/mrv2.app/
+
 
 - Windows and Chrome, like macOS, also protect you from installing files
   from the Internet.  When you first download it with Chrome it may warn
@@ -85,7 +90,7 @@ mrv2 binaries run on Windows 8.1+, RedHat 8.9+ or Ubuntu 20.04+ and macOS 11.0+.
   Windows Explorer and go to the Downloads directory.  You should then
   run it from there.
   Then Windows will popup a Blue box telling you Windows SmartScreen
-  prevented the start of an unknown aplication and that you can place your
+  prevented the start of an unknown application and that you can place your
   PC at risk.
   Click on the More Information text and a Button that says Run anyway or
   similar should appear.  Click on it and follow the standard instructions
@@ -126,7 +131,7 @@ mrv2 binaries run on Windows 8.1+, RedHat 8.9+ or Ubuntu 20.04+ and macOS 11.0+.
 
 # Features
 
-The source code is written in C++17 and uses CMake for the build system, with some bash scripts for auxiliary tasks.  
+The source code is written in C++20 and uses CMake for the build system, with some bash scripts for auxiliary tasks.  
 The core of the playback engine is a custom version of tlRender (www.github.com/darbyjohnston/tlRender.git).
 
 Currently supported:
@@ -141,7 +146,7 @@ Currently supported:
 - Native OpenTimelineIO with dissolves
 - .otioz file bundles
 - Creation of OpenTimelineIO playlists
-- OpenEXR multichannel, multiview and multipart support
+- OpenEXR multichannel, multiview, YC, tiled and multipart support
 - Environment mapping (Spherical and Cubic)
 - Python3 API and Plugin system
 - Network connections
@@ -178,10 +183,6 @@ sudo dnf -y install perl perl-CPAN
 # Install IPC::Cmd non-interactively
 sudo cpan App::cpanminus && cpanm --notest IPC::Cmd
 
-# Install python3 and meson
-sudo dnf -y install python3
-sudo pip3 install meson
-
 #
 # Install dependencies
 #
@@ -191,7 +192,14 @@ sudo dnf -y install git wget curl cmake pango-devel gettext ninja-build \
 	       autoconf wayland-devel wayland-protocols-devel cairo-devel \
 	       libxkbcommon-devel dbus-devel mesa-libGLU-devel gtk3-devel \
 	       libffi-devel openssl-devel tk-devel tcl-devel libXt-devel \
-	       subversion swig
+	       swig
+
+sudo dnf install centos-release-scl
+
+sudo dnf install gcc-toolset-13
+
+scl enable gcc-toolset-13 bash
+
 ```
 
 ### Ubuntu
@@ -212,14 +220,11 @@ sudo apt -y install curl build-essential perl git cmake ninja-build \
 		    libpulse-dev libssl-dev libffi-dev \
 		    libwayland-dev wayland-protocols libdbus-1-dev \
 		    libxkbcommon-dev libegl-dev libgtk-3-dev rpm \
-                    doxygen tk-dev libxt-dev swig subversion
+                    doxygen tk-dev libxt-dev swig
 
 # Install cpanminus and IPC::Cmd non-interactively
 sudo cpan App::cpanminus && cpanm --notest IPC::Cmd
 
-# Install meson for dav1d codec
-sudo apt install pip
-sudo pip3 install meson
 
 ```
 
@@ -239,18 +244,17 @@ xcode-select --install
 #
 # Install dependencies
 #
-brew install git gnu-sed swig subversion meson cmake ninja gettext openssl readline sqlite3 xz zlib
+brew install git gnu-sed swig python cmake ninja gettext openssl readline sqlite3 xz zlib
 
 ```
 
 ### Windows
 
-- [Visual Studio 2019 or later Community](https://visualstudio.microsoft.com/en/free-developer-offers)
+- [Visual Studio 2022 or later Community/Enterprise](https://visualstudio.microsoft.com/en/free-developer-offers) (with clang compiler)
 - [MSYS2](https://www.msys2.org/)
 - [Git](https://git-scm.com/downloads)
 - [CMake 3.26.2 or later](https://cmake.org/download/)
 - [Python 3.10 or later](https://www.python.org/downloads/)
-- [meson 1.3.1 or later](https://github.com/mesonbuild/meson/releases/tag/1.3.1)
 - [NSIS Installer for Packaging](https://nsis.sourceforge.io/Download) - Optional
 
 Additional dependencies are downloaded and built automatically by the CMake
@@ -258,7 +262,7 @@ superbuild script.  For a list of non-system libraries that mrv2 depends on
 and their licenses, please refer to src/docs/Legal.
 
 The only special requirement is installing a new copy of cmake than the
-one that ships with MSVC19.
+one that ships with MSVC2022.
 If building the NSIS installer, you need to place the root of mrv2 in a path
 that has less than 20 characters, like:
 
@@ -292,7 +296,7 @@ directory where all files shall reside.
 
 Make sure you meet the basic dependencies for your platform.  See [Dependencies](#dependencies).
 
-The runme.sh sript will output its progress to the terminal and also save it
+The runme.sh script will output its progress to the terminal and also save it
 in:
 ````
 BUILD-KERNEL-ARCH/BUILDTYPE/compile.log.
@@ -352,7 +356,7 @@ You run the .bat file first, which will set the Visual Studio paths and
 fire up a Msys console.  From then on, all commands described are run in 
 the Msys console.
 
-FFmpeg and liblcms2 are now compiled as part of the pre-flight cmake build.  libssh and libcrypto are taken from Msys64 repositories when building FFmpeg as well as swig and subversion.
+FFmpeg and liblcms2 are now compiled as part of the pre-flight cmake build.  libssh and libcrypto are taken from Msys64 repositories when building FFmpeg as well as swig.
 
 The libintl and libiconv libraries are taken from the MSys64 repositories as pre-flight check with the bin/install_libintl_window.sh script (part of runme.sh).
 
@@ -406,10 +410,6 @@ start it from the BUILD directory with the mrv2.sh script, like:
 ```
 BUILD-Linux-amd64/Release/install/bin/mrv2.sh
 ```
-
-Note, the binary Linux distribution of mrv2 may run into some Wayland
-incompatibilities with modern distros like Ubuntu 22.04.4 LTS, leading to some harmless warnings.
-
 
 ## Windows
 

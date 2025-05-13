@@ -52,7 +52,7 @@ endif()
 if(GIT_SUBMODULE)
     find_package(Git REQUIRED)
     
-    message(STATUS "Update/init tlRender's submodules (FSeq, etc)")
+    message(STATUS "Update/init tlRender's submodules")
     execute_process(
 	COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
 	WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/
@@ -69,26 +69,72 @@ endif()
 
 #
 # Python cannot be built with asan dependencies
-#
-set(PYTHON_DEP )
-if(BUILD_PYTHON )
+#set(PYTHON_DEP )
+if(BUILD_PYTHON)
+    set(Python_EXECUTABLE "$ENV{PYTHON}")
+    set(Python_VERSION "$ENV{PYTHON_VERSION}")
     include(cmake/Modules/BuildPython.cmake )
 else()
-    set(Python_EXECUTABLE "$ENV{PYTHONEXE}")
-    set(Python_VERSION "$ENV{PYTHON_VERSION}")
-    message(STATUS "Python EXECUTABLE=${Python_EXECUTABLE}")
-    if (NOT Python_EXECUTABLE)
-	# As a last resort...
-	if (UNIX)
-	    set(Python_EXECUTABLE python3)
-	else()
-	    set(Python_EXECUTABLE python.exe)
+    if (NOT EXISTS "${Python_EXECUTABLE}")
+	find_package(Python COMPONENTS Interpreter)
+	if (NOT EXISTS "${Python_EXECUTABLE}")
+	    # As a last resort...
+	    if (UNIX)
+		find_program(Python_EXECUTABLE NAMES python3 python)
+	    else()
+		find_program(Python_EXECUTABLE NAMES py.exe python.exe)
+	    endif()
 	endif()
     endif()
 endif()
 
+message(STATUS "Python EXECUTABLE=${Python_EXECUTABLE}")
 set(PYTHON_EXECUTABLE ${Python_EXECUTABLE})
 
+#
+# If not building Python, make sure we have meson in path to build
+# libdav1d and libplacebo.
+# If no meson, try to install it.
+#
+if (NOT BUILD_PYTHON AND (TLRENDER_AV1 OR TLRENDER_LIBPLACEBO))
+    # Extract the directory from the Python executable path
+    get_filename_component(PYTHON_DIR "${PYTHON_EXECUTABLE}" DIRECTORY)
+    
+    # Add the extracted directory to the PATH environment variable
+    if (WIN32)
+	set(ENV{PATH} "${PYTHON_DIR};${PYTHON_DIR}/Scripts;$ENV{PATH}")
+    else()
+	set(ENV{PATH} "${PYTHON_DIR}:${PYTHON_DIR}/Scripts:$ENV{PATH}")
+    endif()
+endif()
+
+find_program(MESON_EXECUTABLE NAMES meson.exe meson)
+if (NOT BUILD_PYTHON AND NOT MESON_EXECUTABLE)
+    message(WARNING "No meson found in path.  Trying to install it "
+	"with ${Python_EXECUTABLE}")
+    execute_process(COMMAND ${Python_EXECUTABLE} -m pip install --user meson )
+    if(WIN32)
+	# Use execute_process to get the Python version
+	execute_process(
+	    COMMAND ${Python_EXECUTABLE} -c "import sys; print(f'Python{sys.version_info.major}{sys.version_info.minor}')"
+	    OUTPUT_VARIABLE PYTHON_VERSION
+	    OUTPUT_STRIP_TRAILING_WHITESPACE
+	)
+
+	# Construct the Roaming Scripts directory path
+	set(ROAMING_SCRIPTS_DIR "$ENV{APPDATA}/Python/${PYTHON_VERSION}/Scripts")
+
+        # Add the Roaming Scripts directory to the PATH environment variable
+        set(ENV{PATH} "${ROAMING_SCRIPTS_DIR};$ENV{PATH}")
+    endif()
+    
+    find_program(MESON_EXECUTABLE NAMES meson.exe meson)
+    if (NOT MESON_EXECUTABLE)
+	message(WARNING "Path is $ENV{PATH}")
+	message(FATAL_ERROR "No meson found in PATH.  Please install it manually or set the PATH to it.")
+    endif()
+endif()
+    
 
 if(CMAKE_BUILD_TYPE MATCHES "^Debug$")
     # Check for Clang or GCC compiler  (@todo: add Microsoft support)
@@ -111,6 +157,7 @@ elseif(APPLE)
     if (NOT CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "")
 	message(WARNING
 	    "Target architecture not specified for macOS deployment")
+    else()
 	if(CMAKE_OSX_ARCHITECTURES MATCHES "^x86_64$") 
 	    #
 	    # brew .dylibs are compiled only for the current version of the OS.
@@ -124,12 +171,9 @@ elseif(APPLE)
 endif()
 
 
-set(libbacktrace_DEP )
-if(CMAKE_BUILD_TYPE MATCHES "^Debug$" OR
-	CMAKE_BUILD_TYPE MATCHES "^DebRelInfo$")
-    if(UNIX AND NOT APPLE)
-	include(cmake/Modules/Buildlibbacktrace.cmake)
-    endif()
+set(cpptrace_DEP )
+if(NOT APPLE)
+    include(cmake/Modules/Buildcpptrace.cmake)
 endif()
 
 set(PYBIND11_DEP )
@@ -142,6 +186,7 @@ add_subdirectory( tlRender/etc/SuperBuild)
 set(FLTK_DEP )
 if(BUILD_FLTK)
     include(cmake/Modules/BuildFLTK.cmake)
+    add_dependencies(tlRender ${FLTK_DEP})
 endif()
 
 if(BUILD_PYTHON AND TLRENDER_USD)

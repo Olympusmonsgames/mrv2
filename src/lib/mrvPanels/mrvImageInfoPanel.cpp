@@ -19,6 +19,10 @@ namespace fs = std::filesystem;
 #include <FL/Fl_Int_Input.H>
 #include <FL/fl_draw.H>
 
+#ifdef TLRENDER_EXR
+#include <OpenEXR/ImfTileDescription.h>
+#endif
+
 #include "mrvCore/mrvColorSpaces.h"
 #include "mrvCore/mrvI8N.h"
 #include "mrvCore/mrvUtil.h"
@@ -592,6 +596,34 @@ namespace mrv
             return true;
         }
 
+        static void change_x_and_y_level_cb(HorSlider* w, ImageInfoPanel* info)
+        {
+            int f = w->value();
+            info->setXLevel(f);
+            info->setYLevel(f);
+            info->m_update = false;
+            refresh_media_cb(nullptr, nullptr);
+            info->m_update = true;
+        }
+        
+        static void change_xlevel_cb(HorSlider* w, ImageInfoPanel* info)
+        {
+            int f = w->value();
+            info->setXLevel(f);
+            info->m_update = false;
+            refresh_media_cb(nullptr, nullptr);
+            info->m_update = true;
+        }
+        
+        static void change_ylevel_cb(HorSlider* w, ImageInfoPanel* info)
+        {
+            int f = w->value();
+            info->setYLevel(f);
+            info->m_update = false;
+            refresh_media_cb(nullptr, nullptr);
+            info->m_update = true;
+        }
+
         static void change_first_frame_cb(HorSlider* w, ImageInfoPanel* info)
         {
             double f = w->value();
@@ -618,6 +650,15 @@ namespace mrv
             c->uiFPS->value(f);
             auto player = ui->uiView->getTimelinePlayer();
             player->setSpeed(f);
+        }
+
+        static void change_pixel_ratio_cb(HorSlider* w, ImageInfoPanel* info)
+        {
+            ViewerUI* ui = App::ui;
+            auto view = ui->uiView;
+
+            float pixelRatio = w->value();
+            view->setPixelAspectRatio(pixelRatio);
         }
 
         double
@@ -720,7 +761,7 @@ namespace mrv
             fill_image_data();
             Fl_Group::current(orig);
         }
-        
+
         void ImageInfoPanel::videoRefresh()
         {
             Fl_Group* orig = Fl_Group::current();
@@ -737,6 +778,9 @@ namespace mrv
 
         void ImageInfoPanel::refresh()
         {
+            if (!m_update)
+                return;
+            
             Fl_Group* orig = Fl_Group::current();
 
             hide_tabs();
@@ -1245,10 +1289,11 @@ namespace mrv
             delete[] opts;
         }
 
-        void ImageInfoPanel::add_int(
+        void ImageInfoPanel::add_unsigned(
             const char* name, const char* tooltip, const unsigned int content,
             const bool editable, const bool active, Fl_Callback* callback,
-            const unsigned int minV, const unsigned int maxV)
+            const unsigned int minV, const unsigned int maxV,
+            const int when)
         {
             Fl_Color colA = get_title_color();
             Fl_Color colB = get_widget_color();
@@ -1291,6 +1336,7 @@ namespace mrv
                     snprintf(buf, 64, "% 9d", content);
                     widget->value(buf);
                     widget->align(FL_ALIGN_CENTER);
+                    widget->when(when);
                     if (tooltip)
                         widget->tooltip(tooltip);
                     else
@@ -1305,6 +1351,7 @@ namespace mrv
                     // slider->linesize(1);
                     slider->type(FL_HORIZONTAL);
                     slider->minimum(minV);
+                    slider->when(when);
 
                     unsigned maxS = maxV;
                     if (content > 100000 && maxV <= 100000)
@@ -1656,10 +1703,10 @@ namespace mrv
             }
 
             m_video->clear();
-            
+
             const auto& info = player->ioInfo();
             unsigned num_video_streams = info.video.size();
-            
+
             if (num_video_streams > 0)
             {
 
@@ -1688,7 +1735,17 @@ namespace mrv
                     std::string colorTRC;
                     std::string colorSpace;
                     std::string compression;
+                    int compressionNumScanlines = video.compressionNumScanlines;
+                    bool isLossyCompression = video.isLossyCompression;
+                    bool isValidDeepCompression = video.isValidDeepCompression;
                     std::string HDRdata;
+                    int xLevels = 0, yLevels = 0;
+
+#ifdef TLRENDER_EXR
+                    int mipmapMode = Imf::LevelMode::ONE_LEVEL;
+                    int roundingMode = Imf::LevelRoundingMode::ROUND_DOWN;
+#endif
+                    
                     if (!tagData.empty())
                     {
                         auto it = tagData.find("Video Codec");
@@ -1700,6 +1757,28 @@ namespace mrv
                         {
                             compression = video.compression;
                         }
+
+#ifdef TLRENDER_EXR
+                        it = tagData.find("Tile");
+                        if (it != tagData.end())
+                        {
+                            std::stringstream s(it->second);
+                            s >> mipmapMode >> mipmapMode >> mipmapMode >> roundingMode;
+                        }
+                        it = tagData.find("numXLevels");
+                        if (it != tagData.end())
+                        {
+                            std::stringstream s(it->second);
+                            s >> xLevels;
+                        }
+                        it = tagData.find("numYLevels");
+                        if (it != tagData.end())
+                        {
+                            std::stringstream s(it->second);
+                            s >> yLevels;
+                        }
+#endif
+                        
                         it = tagData.find("Video Rotation");
                         if (it != tagData.end())
                         {
@@ -1732,10 +1811,10 @@ namespace mrv
                         add_text(_("Codec"), _("Codec"), _("Unknown"));
                     }
 
-                    add_int(
+                    add_unsigned(
                         _("Width"), _("Width of clip"), (unsigned)size.w,
                         false);
-                    add_int(
+                    add_unsigned(
                         _("Height"), _("Height of clip"), (unsigned)size.h,
                         false);
 
@@ -1757,16 +1836,73 @@ namespace mrv
                     snprintf(buf, 256, "%g (%s)", aspect_ratio, name);
                     add_text(_("Aspect Ratio"), _("Aspect ratio of clip"), buf);
 
+                    const auto view = _p->ui->uiView;
+                    float pixelAspectRatio = view->getPixelAspectRatio();
+                    if (pixelAspectRatio < 0.001F)
+                        pixelAspectRatio = size.pixelAspectRatio;
+
                     add_float(
                         _("Pixel Ratio"), _("Pixel ratio of clip"),
-                        size.pixelAspectRatio, false, true);
+                        pixelAspectRatio, true, true,
+                        (Fl_Callback*)change_pixel_ratio_cb, 0.0f, 8.0f,
+                        FL_WHEN_ENTER_KEY | FL_WHEN_CHANGED);
 
+#ifdef TLRENDER_EXR
+                    if (mipmapMode == Imf::MIPMAP_LEVELS)
+                    {
+                        ++group;
+                        add_int(_("Mipmap Level"), _("Mipmap Level"),
+                                xLevel,
+                                true, true,
+                                (Fl_Callback*)change_x_and_y_level_cb,
+                                0, xLevels,
+                                FL_WHEN_ENTER_KEY | FL_WHEN_RELEASE);
+                    }
+                    else if (mipmapMode == Imf::RIPMAP_LEVELS)
+                    {
+                        ++group;
+                        add_int(_("X Ripmap Level"), _("X Ripmap Level"),
+                                xLevel, true, true,
+                                (Fl_Callback*)change_xlevel_cb,
+                                0, xLevels,
+                                FL_WHEN_ENTER_KEY | FL_WHEN_RELEASE);
+                        add_int(_("Y Ripmap Level"), _("Y Ripmap Level"),
+                                yLevel, true, true,
+                                (Fl_Callback*)change_ylevel_cb,
+                                0, yLevels,
+                                FL_WHEN_ENTER_KEY | FL_WHEN_RELEASE);
+                    }
+                    if (mipmapMode != Imf::ONE_LEVEL)
+                    {
+                        std::string roundingModeText = _("DOWN");
+                        if (roundingMode == Imf::LevelRoundingMode::ROUND_UP)
+                            roundingModeText = _("UP");
+                        add_text(_("Rounding Mode"), _("Rounding Mode"),
+                                 roundingModeText);
+                        ++group;
+                    }
+#endif
+                            
                     if (rotation != 0.F)
                         add_float(_("Rotation"), _("Video Rotation"), rotation);
 
-                    if (!compression.empty())
+                    if (!compression.empty() && compression != "Unknown")
+                    {
                         add_text(
                             _("Compression"), _("Compression"), compression);
+
+                        if (compressionNumScanlines > 0)
+                            add_int(
+                                _("Compression Num. Scanlines"),
+                                _("Number of Compression Scanlines"),
+                                compressionNumScanlines);
+                        add_bool(
+                            _("Lossy Compression"), _("Lossy Compression"),
+                            isLossyCompression);
+                        add_bool(
+                            _("Deep Compression"), _("Deep Compression"),
+                            isValidDeepCompression);
+                    }
 
                     ++group;
 
@@ -1850,22 +1986,30 @@ namespace mrv
                         nlohmann::json json = nlohmann::json::parse(HDRdata);
                         image::HDRData hdr = json.get<image::HDRData>();
 
-                        
-                        math::Vector2f& v = hdr.primaries[image::HDRPrimaries::Red];
+                        math::Vector2f& v =
+                            hdr.primaries[image::HDRPrimaries::Red];
                         snprintf(buf, 256, "(%g) (%g)", v.x, v.y);
-                        add_text(_("HDR Red Primaries"), _("HDR Red Primaries"), buf);
-                        
+                        add_text(
+                            _("HDR Red Primaries"), _("HDR Red Primaries"),
+                            buf);
+
                         v = hdr.primaries[image::HDRPrimaries::Green];
                         snprintf(buf, 256, "(%g) (%g)", v.x, v.y);
-                        add_text(_("HDR Green Primaries"), _("HDR Green Primaries"), buf);
+                        add_text(
+                            _("HDR Green Primaries"), _("HDR Green Primaries"),
+                            buf);
 
                         v = hdr.primaries[image::HDRPrimaries::Blue];
                         snprintf(buf, 256, "(%g) (%g)", v.x, v.y);
-                        add_text(_("HDR Blue Primaries"), _("HDR Blue Primaries"), buf);
-                        
+                        add_text(
+                            _("HDR Blue Primaries"), _("HDR Blue Primaries"),
+                            buf);
+
                         v = hdr.primaries[image::HDRPrimaries::White];
                         snprintf(buf, 256, "(%g) (%g)", v.x, v.y);
-                        add_text(_("HDR White Primaries"), _("HDR White Primaries"), buf);
+                        add_text(
+                            _("HDR White Primaries"), _("HDR White Primaries"),
+                            buf);
 
                         const math::FloatRange& luminance =
                             hdr.displayMasteringLuminance;
@@ -1878,7 +2022,7 @@ namespace mrv
 
                         snprintf(buf, 256, "%g", hdr.maxCLL);
                         add_text(_("HDR maxCLL"), _("HDR maxCLL"), buf);
-                        
+
                         snprintf(buf, 256, "%g", hdr.maxFALL);
                         add_text(_("HDR maxFALL"), _("HDR maxFALL"), buf);
                     }
@@ -1906,6 +2050,7 @@ namespace mrv
                         for (const auto& tag : tagData)
                         {
                             std::string key = tag.first;
+                            
                             auto i = key.find(match);
                             if (i != std::string::npos)
                             {
@@ -2087,7 +2232,6 @@ namespace mrv
 
             // First, check the metadata
             fill_video_data();
-
 
             if (num_audio_streams > 0)
             {
@@ -2280,7 +2424,9 @@ namespace mrv
                 if (item.first == "hdr" ||
                     item.first.substr(0, 5) == "Video" ||
                     item.first.substr(0, 5) == "Audio" ||
-                    item.first.substr(0, 19) == "FFmpeg Pixel Format")
+                    item.first.substr(0, 19) == "FFmpeg Pixel Format" ||
+                    item.first.substr(0, 12) == "otioClipName" ||
+                    item.first.substr(0, 12) == "otioClipTime")
                 {
                     skip = true;
                 }
@@ -2304,7 +2450,7 @@ namespace mrv
 
             if (!player)
                 return;
-            
+
             const auto& info = player->ioInfo();
 
             // First, add global tags

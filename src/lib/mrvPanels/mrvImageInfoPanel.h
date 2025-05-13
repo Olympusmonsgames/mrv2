@@ -48,19 +48,32 @@ namespace mrv
             ImageInfoPanel(ViewerUI* ui);
             ~ImageInfoPanel();
 
+            //! Return X Level
+            int getXLevel() const { return xLevel; }
+            
+            //! Set X Mipmap level.
+            void setXLevel(int X) { xLevel = X; }
+            
+            //! Return X Level
+            int getYLevel() const { return yLevel; }
+            
+            //! Set Y Mipmap level.
+            void setYLevel(int X) { yLevel = X; }
+
+            
             //! Get the tags.
             void getTags();
-            
+
             //! Refresh all tabs.
             void refresh();
 
-            //! Quicky refresh the image tab if open.
+            //! Quickly refresh the image tab if open.
             void imageRefresh();
-            
-            //! Quicky refresh the video tab if open.
+
+            //! Quickly refresh the video tab if open.
             void videoRefresh();
 
-            //! Quicky refresh the metadata tab if open.
+            //! Quickly refresh the metadata tab if open.
             void metadataRefresh();
 
             TimelinePlayer* timelinePlayer() const;
@@ -71,7 +84,6 @@ namespace mrv
             void scroll_to(int w, int h);
 
             Pack* get_pack() const { return g->get_pack(); };
-
 
         protected:
             Fl_Color get_title_color();
@@ -146,11 +158,12 @@ namespace mrv
                 const bool editable = false, const bool active = true,
                 Fl_Callback* callback = NULL, const int minV = 0,
                 const int maxV = 10, const int when = FL_WHEN_CHANGED);
-            void add_int(
+            void add_unsigned(
                 const char* name, const char* tooltip,
                 const unsigned int content, const bool editable = false,
                 const bool active = true, Fl_Callback* callback = NULL,
-                const unsigned int minV = 0, const unsigned int maxV = 9999);
+                const unsigned int minV = 0, const unsigned int maxV = 9999,
+                const int when = FL_WHEN_CHANGED);
             void add_bool(
                 const char* name, const char* tooltip, const bool content,
                 const bool editable = false, Fl_Callback* callback = NULL);
@@ -176,6 +189,10 @@ namespace mrv
             Fl_Input* m_entry;
             Fl_Choice* m_type;
 
+            //! Flag used in callbacks to avoid refreshing the panel on
+            //! media refresh.
+            bool m_update = true;
+
         protected:
             int kMiddle;
             Table* m_curr;
@@ -187,6 +204,8 @@ namespace mrv
             std::map<std::string, std::string, string::CaseInsensitiveCompare>
                 tagData;
 
+            unsigned int xLevel = 0, yLevel = 0;
+            
         public:
             Fl_Menu_Button* menu = nullptr;
 

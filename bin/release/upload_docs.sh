@@ -4,17 +4,25 @@
 # Copyright Contributors to the mrv2 Project. All rights reserved.
 # Define the directory where you want to start the search
 
-. etc/functions.sh
+. etc/build_dir.sh
 
 extract_version
 
 start_dir="docs/sphinx/"
 
+CMD='sed -i'
+if [[ $KERNEL == *Darwin* ]]; then
+    CMD='perl -pi -e'
+fi
+
 # Use find command to recursively search for files
-# Pipe the results to xargs, which will execute sed command on each file
-find "$start_dir" -type f -name '*.rst' -exec sed -i "s/v[0-9]\.[0-9]\.[0-9]/v${mrv2_VERSION}/g" {} +
+find "$start_dir" -type f -name '*.rst' -exec $CMD "s/v[0-9]\.[0-9]\.[0-9]/v${mrv2_VERSION}/g" {} +
 
 ./runmeq.sh -t doc
+
+if [[ $KERNEL == *Msys* ]]; then
+    pacman -Sy rsync --noconfirm
+fi
 
 rsync -avP --exclude '*~' -e ssh docs/www/* ggarra13@web.sourceforge.net:/home/project-web/mrv2/htdocs
 

@@ -5,42 +5,45 @@
 // Debug scaling of the window to image size.
 // #define DEBUG_SCALING 1
 
-#include <memory>
-#include <cmath>
-#include <algorithm>
+#include "mrViewer.h"
 
+#include <tlDevice/IOutput.h>
+
+#include <tlCore/HDR.h>
 #include <tlCore/Matrix.h>
 
-#include "mrViewer.h"
+#include "mrvApp/mrvSettingsObject.h"
 
 #include "mrvPanels/mrvAnnotationsPanel.h"
 #include "mrvPanels/mrvPanelsCallbacks.h"
 
 #include "mrvUI/mrvDesktop.h"
+#include "mrvWidgets/mrvHorSlider.h"
+#include "mrvWidgets/mrvMultilineInput.h"
 
 #include "mrvGL/mrvTimelineViewport.h"
 #include "mrvGL/mrvTimelineViewportPrivate.h"
+
+#include "mrvNetwork/mrvTCP.h"
+#include "mrvNetwork/mrvDummyClient.h"
 
 #include "mrvFl/mrvCallbacks.h"
 #include "mrvFl/mrvOCIO.h"
 #include "mrvFl/mrvTimelinePlayer.h"
 
-#include "mrvCore/mrvUtil.h"
-#include "mrvCore/mrvMath.h"
-#include "mrvCore/mrvHotkey.h"
 #include "mrvCore/mrvColorSpaces.h"
-
-#include "mrvWidgets/mrvHorSlider.h"
-#include "mrvWidgets/mrvMultilineInput.h"
-
-#include "mrvNetwork/mrvTCP.h"
-#include "mrvNetwork/mrvDummyClient.h"
-
-#include "mrvApp/mrvSettingsObject.h"
+#include "mrvCore/mrvHotkey.h"
+#include "mrvCore/mrvMath.h"
+#include "mrvCore/mrvUtil.h"
+#include "mrvCore/mrvWait.h"
 
 #include "mrvFl/mrvIO.h"
 
 #include <FL/Fl.H>
+
+#include <algorithm>
+#include <cmath>
+#include <memory>
 
 namespace
 {
@@ -73,7 +76,6 @@ namespace mrv
     using namespace tl;
 
     std::string TimelineViewport::Private::hdr;
-    timeline::BackgroundOptions TimelineViewport::Private::backgroundOptions;
     EnvironmentMapOptions TimelineViewport::Private::environmentMapOptions;
     math::Box2i TimelineViewport::Private::selection =
         math::Box2i(0, 0, -1, -1);
@@ -92,12 +94,14 @@ namespace mrv
     bool TimelineViewport::Private::dataWindow = false;
     bool TimelineViewport::Private::displayWindow = false;
     bool TimelineViewport::Private::ignoreDisplayWindow = false;
+    float TimelineViewport::Private::pixelAspectRatio = -1.F;
     std::string TimelineViewport::Private::helpText;
     float TimelineViewport::Private::helpTextFade;
     bool TimelineViewport::Private::hudActive = true;
     HudDisplay TimelineViewport::Private::hud = HudDisplay::kNone;
-    std::map<std::string, std::string, string::CaseInsensitiveCompare>
-        TimelineViewport::Private::tagData;
+    image::Tags TimelineViewport::Private::tagData;
+    short TimelineViewport::Private::ghostNext = 5;
+    short TimelineViewport::Private::ghostPrevious = 5;
 
     static void drawTimeoutText_cb(TimelineViewport* view)
     {
@@ -112,6 +116,7 @@ namespace mrv
         TLRENDER_P();
 
         p.ui = App::ui;
+        _init();
     }
 
     TimelineViewport::TimelineViewport(int W, int H, const char* L) :
@@ -121,6 +126,32 @@ namespace mrv
         TLRENDER_P();
 
         p.ui = App::ui;
+        _init();
+    }
+
+    void TimelineViewport::_init()
+    {
+        TLRENDER_P();
+
+        auto settings = App::app->settings();
+
+        timeline::BackgroundOptions backgroundOptions;
+        backgroundOptions.type = static_cast<timeline::Background>(
+            settings->getValue<int>("Background/Type"));
+
+        Fl_Color color;
+        int size = settings->getValue<int>("Background/CheckersSize");
+        backgroundOptions.checkersSize = math::Size2i(size, size);
+
+        color = settings->getValue<int>("Background/color0");
+        backgroundOptions.color0 = from_fltk_color(color);
+
+        color = settings->getValue<int>("Background/color1");
+        backgroundOptions.color1 = from_fltk_color(color);
+
+        p.backgroundOptions =
+            observer::Value<timeline::BackgroundOptions>::create(
+                backgroundOptions);
     }
 
     TimelineViewport::~TimelineViewport()
@@ -269,7 +300,8 @@ namespace mrv
             break;
         case kRectangle:
             p.ui->uiRectangle->value(1);
-            p.ui->uiRectangle->bind_image(mrv::load_svg("OutlineRectangle.svg"));
+            p.ui->uiRectangle->bind_image(
+                mrv::load_svg("OutlineRectangle.svg"));
             p.ui->uiStatus->copy_label(_("Rectangle"));
             break;
         case kFilledRectangle:
@@ -461,6 +493,7 @@ namespace mrv
             c->uiPlayForwards->redraw();
             c->uiPlayBackwards->redraw();
             c->uiStop->redraw();
+            p.ui->uiMain->fill_menu(p.ui->uiMenuBar);
             return;
         }
 
@@ -530,6 +563,8 @@ namespace mrv
         c->uiPlayForwards->redraw();
         c->uiPlayBackwards->redraw();
         c->uiStop->redraw();
+
+        p.ui->uiMain->fill_menu(p.ui->uiMenuBar);
     }
 
     void TimelineViewport::startFrame() noexcept
@@ -747,24 +782,20 @@ namespace mrv
     const timeline::BackgroundOptions&
     TimelineViewport::getBackgroundOptions() const noexcept
     {
+        return _p->backgroundOptions->get();
+    }
+
+    std::shared_ptr<observer::IValue<timeline::BackgroundOptions> >
+    TimelineViewport::observeBackgroundOptions() const
+    {
         return _p->backgroundOptions;
     }
 
     void TimelineViewport::setBackgroundOptions(
         const timeline::BackgroundOptions& value)
     {
-        TLRENDER_P();
-
-        if (value == p.backgroundOptions)
-            return;
-
-        p.backgroundOptions = value;
-
-        Message msg;
-        msg["command"] = "setBackgroundOptions";
-        msg["value"] = value;
-        tcp->pushMessage(msg);
-        redrawWindows();
+        auto settings = App::app->settings();
+        _p->backgroundOptions->setIfChanged(value);
     }
 
     void TimelineViewport::setOCIOOptions(
@@ -810,6 +841,10 @@ namespace mrv
         p.ui->uiTimeline->setDisplayOptions(display);
         p.ui->uiTimeline->redraw(); // to refresh thumbnail
 
+        const auto outputDevice = App::app->outputDevice();
+        if (outputDevice)
+            outputDevice->setOCIOOptions(value);
+
         Message msg;
         msg["command"] = "setOCIOOptions";
         msg["value"] = value;
@@ -837,6 +872,11 @@ namespace mrv
         display.lut = value;
         p.ui->uiTimeline->setDisplayOptions(display);
         p.ui->uiTimeline->redraw(); // to refresh thumbnail
+
+        const auto outputDevice = App::app->outputDevice();
+        if (outputDevice)
+            outputDevice->setLUTOptions(value);
+
         redraw();
     }
 
@@ -854,8 +894,10 @@ namespace mrv
         const std::vector<timeline::DisplayOptions>& value) noexcept
     {
         TLRENDER_P();
+
         if (value == p.displayOptions)
             return;
+
         p.displayOptions = value;
 
         const auto& d = p.displayOptions[0];
@@ -920,6 +962,22 @@ namespace mrv
         redraw();
     }
 
+    void
+    TimelineViewport::setHDROptions(const timeline::HDROptions& value) noexcept
+    {
+        TLRENDER_P();
+        if (value == p.hdrOptions)
+            return;
+        p.hdrOptions.tonemap = value.tonemap;
+        p.hdrOptions.algorithm = value.algorithm;
+        redrawWindows();
+    }
+
+    const timeline::HDROptions& TimelineViewport::getHDROptions() const noexcept
+    {
+        return _p->hdrOptions;
+    }
+
     void TimelineViewport::setTimelinePlayer(TimelinePlayer* player) noexcept
     {
         TLRENDER_P();
@@ -942,6 +1000,9 @@ namespace mrv
                     { currentVideoCallback(value); },
                     observer::CallbackAction::Suppress);
 
+            // needed for refreshing secondary viewport when stopped.
+            p.videoData = player->currentVideo();
+
             p.switchClip = true;
         }
         else
@@ -949,8 +1010,8 @@ namespace mrv
             p.videoData.clear();
         }
 
-        // refreshWindows(); // needed We need to refresh, as the new
-        // video data may have different sizes.
+        refreshWindows(); // needed We need to refresh, as the new
+                          // video data may have different sizes.
     }
 
     mrv::TimelinePlayer* TimelineViewport::getTimelinePlayer() const noexcept
@@ -971,6 +1032,12 @@ namespace mrv
     void TimelineViewport::setFrameView(bool active) noexcept
     {
         _p->frameView = active;
+        _updateDevices();
+    }
+
+    void TimelineViewport::setResizeWindow(bool active) noexcept
+    {
+        _p->resizeWindow = active;
     }
 
     bool TimelineViewport::hasFrameView() const noexcept
@@ -996,6 +1063,11 @@ namespace mrv
     bool TimelineViewport::getIgnoreDisplayWindow() const noexcept
     {
         return _p->ignoreDisplayWindow;
+    }
+
+    float TimelineViewport::getPixelAspectRatio() const noexcept
+    {
+        return _p->pixelAspectRatio;
     }
 
     void TimelineViewport::setSafeAreas(bool value) noexcept
@@ -1027,6 +1099,14 @@ namespace mrv
         if (value == _p->ignoreDisplayWindow)
             return;
         _p->ignoreDisplayWindow = value;
+        redrawWindows();
+    }
+
+    void TimelineViewport::setPixelAspectRatio(const float value) noexcept
+    {
+        if (value == _p->pixelAspectRatio)
+            return;
+        _p->pixelAspectRatio = value;
         redrawWindows();
     }
 
@@ -1109,6 +1189,25 @@ namespace mrv
         }
     }
 
+    void TimelineViewport::_updateDevices() const noexcept
+    {
+        TLRENDER_P();
+        const auto outputDevice = App::app->outputDevice();
+        if (!outputDevice)
+            return;
+
+        const auto& viewportSize = getViewportSize();
+        float scale = 1.0;
+        const math::Size2i& deviceSize = outputDevice->getSize();
+        if (viewportSize.isValid() && deviceSize.isValid())
+        {
+            scale *= deviceSize.w / static_cast<float>(viewportSize.w);
+        }
+        outputDevice->setView(
+            viewportSize, p.viewPos * scale, p.viewZoom * scale, _getRotation(),
+            p.frameView);
+    }
+
     void TimelineViewport::setViewPosAndZoom(
         const math::Vector2i& pos, float zoom) noexcept
     {
@@ -1117,7 +1216,6 @@ namespace mrv
             return;
         p.viewPos = pos;
         p.viewZoom = zoom;
-
         _updateZoom();
         redraw();
 
@@ -1176,8 +1274,6 @@ namespace mrv
     {
         TLRENDER_P();
 
-        assert(!values.empty());
-
         p.videoData = values;
 
         if (p.resizeWindow)
@@ -1192,7 +1288,7 @@ namespace mrv
             frameView();
         }
 
-        if (p.switchClip)
+        if (p.switchClip && !values.empty() && !values[0].layers.empty())
         {
             const auto& image = values[0].layers[0].image;
             if (image && image->isValid())
@@ -1288,17 +1384,13 @@ namespace mrv
             auto i = p.tagData.find("Data Window");
             if (i != p.tagData.end())
                 metadataRefresh = true;
-        
+
             i = p.tagData.find("hdr");
             if (i != p.tagData.end())
             {
-                if (p.hdr != i->second)
-                {
-                    p.hdr = i->second;
-                    videoRefresh = true;
-                }
+                videoRefresh = true;
             }
-        
+
             if (fullRefresh)
             {
                 panel::imageInfoPanel->refresh();
@@ -1307,7 +1399,7 @@ namespace mrv
             {
                 if (videoRefresh || metadataRefresh)
                     panel::imageInfoPanel->getTags();
-                
+
                 if (imageRefresh)
                     panel::imageInfoPanel->imageRefresh();
                 if (videoRefresh)
@@ -1509,6 +1601,7 @@ namespace mrv
         setViewPosAndZoom(viewPos, zoom);
 
         p.mousePos = _getFocus();
+        _updateDevices();
         redraw();
     }
 
@@ -1517,16 +1610,13 @@ namespace mrv
         TLRENDER_P();
         auto renderSize = getRenderSize();
 
+        bool use_maximize = false;
         Fl_Double_Window* mw = p.ui->uiMain;
         int screen = mw->screen_num();
 
         int W = renderSize.w;
         int H = renderSize.h;
-        if (renderSize.isValid())
-        {
-            p.resizeWindow = false;
-        }
-        else
+        if (!renderSize.isValid())
         {
             W = 320;
             H = 240;
@@ -1534,21 +1624,7 @@ namespace mrv
 
         float aspectRatio = static_cast<float>(W) / H;
 
-#ifdef DEBUG_SCALING
-        std::cerr << "renderSize=" << renderSize << std::endl;
-        std::cerr << "aspectRatio=" << aspectRatio << std::endl;
-#endif
-
         int minX, minY, maxW, maxH, posX, posY;
-        Fl::screen_work_area(minX, minY, maxW, maxH, screen);
-#ifdef DEBUG_SCALING
-        std::cerr << "work area=" << minX << " " << minY << " " << maxW << "x"
-                  << maxH << std::endl;
-#endif
-
-        int WBars = 0;
-        int HBars = 0;
-
         PreferencesUI* uiPrefs = p.ui->uiPrefs;
         if (!desktop::Wayland() && uiPrefs->uiWindowFixedPosition->value())
         {
@@ -1561,6 +1637,12 @@ namespace mrv
             posY = mw->y();
         }
 
+        Fl::screen_work_area(minX, minY, maxW, maxH, posX, posY); //, screen);
+
+        int WBars = 0;
+        int HBars = 0;
+        int TVH = 0;
+
         // First, make sure the user or window manager did not set an
         // incorrect position
         if (posX < minX)
@@ -1569,24 +1651,18 @@ namespace mrv
         if (posY < minY)
             posY = minY;
 
-#ifdef DEBUG_SCALING
-        std::cerr << "pos=" << posX << " " << posY << std::endl;
-#endif
-
         int decW = mw->decorated_w();
         int decH = mw->decorated_h();
 
         int dW = decW - mw->w();
         int dH = decH - mw->h();
 
-#ifdef DEBUG_SCALING
-        std::cerr << "DECORATE SIZES " << dW << "x" << dH << std::endl;
-#endif
         maxW -= dW;
         maxH -= dH;
 
         bool alwaysFrameView = (bool)uiPrefs->uiPrefsAutoFitImage->value();
         p.frameView = alwaysFrameView;
+        bool frameView = p.frameView;
 
         if (uiPrefs->uiWindowFixedSize->value())
         {
@@ -1618,82 +1694,51 @@ namespace mrv
 
             if (p.ui->uiStatusGroup->visible())
                 HBars += p.ui->uiStatusGroup->h();
+
             if (p.ui->uiBottomBar->visible())
             {
-                int TH = calculate_edit_viewport_size(p.ui);
-                HBars += TH;
-
-#ifdef DEBUG_SCALING
-                std::cerr << "Timeline Height=" << TH << std::endl;
-#endif
+                TVH = calculate_edit_viewport_size(p.ui);
+                HBars += TVH;
             }
 
-#ifdef DEBUG_SCALING
-            std::cerr << "BARS WBars=" << WBars << " HBars=" << HBars
-                      << std::endl;
-#endif
             // Try to adjust sizing first, keeping the pos the same.
             if (aspectRatio > 1)
             {
                 if (posY + H > minY + maxH)
                 {
-                    p.frameView = true;
+                    frameView = true;
                     float pct = static_cast<float>(maxH - HBars) / renderSize.h;
                     renderSize.h = maxH - HBars + dH;
                     renderSize.w *= pct;
-
-#ifdef DEBUG_SCALING
-                    std::cerr << "Adjust sizing on height pct=" << pct
-                              << std::endl;
-#endif
                 }
             }
             else
             {
                 if (posX + W + WBars > minX + maxW)
                 {
-                    p.frameView = true;
+                    frameView = true;
 
                     float pct = static_cast<float>(maxW - WBars) / renderSize.w;
                     renderSize.w = maxW - WBars + dW;
                     renderSize.h *= pct;
-
-#ifdef DEBUG_SCALING
-                    std::cerr << "Adjust sizing on width pct=" << pct
-                              << std::endl;
-#endif
                 }
             }
-
-#ifdef DEBUG_SCALING
-            std::cerr << "renderSize rescaled=" << renderSize << std::endl;
-#endif
             // Add the bars to the render size to calculate potential window
             // size.
             W = renderSize.w + WBars;
             H = renderSize.h + HBars;
         }
 
-#ifdef DEBUG_SCALING
-        std::cerr << "Window size so far " << posX << " " << posY << " W=" << W
-                  << " H=" << H << std::endl;
-#endif
-
         // First, try by
         if (posY + H > minY + maxH)
         {
-            p.frameView = true;
+            frameView = true;
             posY = minY + dH; // dH is needed here!
         }
 
-#ifdef DEBUG_SCALING
-        std::cerr << "maxH check1 " << posX << " " << posY << " W=" << W
-                  << " H=" << H << std::endl;
-#endif
-
         if (posX + W > minX + maxW)
         {
-            p.frameView = true;
+            frameView = true;
             posX = minX + dW / 2; // dW / 2 is needed here!
         }
 
@@ -1701,27 +1746,19 @@ namespace mrv
         // minX, minY with maxW and maxH.
         if (posY + H > minY + maxH)
         {
-            p.frameView = true;
+            frameView = true;
             posY = minY + dH; // dH is needed here!
-            H = maxH;
+            H = maxH - posY;
+            use_maximize = true;
         }
-
-#ifdef DEBUG_SCALING
-        std::cerr << "maxH check2 " << posX << " " << posY << " W=" << W
-                  << " H=" << H << std::endl;
-#endif
 
         if (posX + W > minX + maxW)
         {
-            p.frameView = true;
+            frameView = true;
             posX = minX + dW / 2; // dW / 2 is needed here!
             W = maxW;
+            use_maximize = true;
         }
-
-#ifdef DEBUG_SCALING
-        std::cerr << "maxW check3 " << posX << " " << posY << " W=" << W
-                  << " H=" << H << std::endl;
-#endif
 
         int minW = 690;
         int minH = 602;
@@ -1731,29 +1768,64 @@ namespace mrv
         // sizes, in case the user loaded a very tiny image.
         if (W < minW)
         {
-            p.frameView = true;
+            frameView = true;
             W = minW;
         }
 
         if (H < minH)
         {
-            p.frameView = true;
+            frameView = true;
             H = minH;
         }
 
-#ifdef DEBUG_SCALING
-        std::cerr << "FINAL Window=" << posX << " " << posY << " " << W << "x"
-                  << H << " dW=" << dW << " dH=" << dH << std::endl;
-#endif
-
-        mw->resize(posX, posY, W, H);
-
-        if (p.frameView)
+        // We use mw->maximize() as FLTK cannot give us real
+        // screen_work_area coordinates.  Work area of two monitors is wrong
+        // on X11 and Wayland does not give areas at all.
+        if (use_maximize && !p.presentation && p.resizeWindow)
         {
+            mw->maximize();
+        }
+        else
+        {
+            mw->resize(posX, posY, W, H);
+        }
+
+        if (frameView)
+        {
+            // Wait a little so that resizing/maximizing takes place.
+            if (use_maximize)
+                wait::milliseconds(1000);
+            else
+                wait::milliseconds(100);
             _frameView();
         }
 
         set_edit_mode_cb(editMode, p.ui);
+
+#ifdef DEBUG_SCALING
+        HBars = 0;
+        TVH = 0;
+
+        // Take into account the different UI bars
+        if (p.ui->uiMenuGroup->visible())
+            HBars += p.ui->uiMenuGroup->h();
+
+        if (p.ui->uiTopBar->visible())
+            HBars += p.ui->uiTopBar->h();
+
+        if (p.ui->uiPixelBar->visible())
+            HBars += p.ui->uiPixelBar->h();
+
+        if (p.ui->uiBottomBar->visible())
+        {
+            HBars += p.ui->uiBottomBar->h();
+        }
+
+        if (p.ui->uiStatusGroup->visible())
+            HBars += p.ui->uiStatusGroup->h();
+
+        TVH = calculate_edit_viewport_size(p.ui);
+#endif
 
         // We need to adjust dock group too.  These lines are needed.
         auto viewGroup = p.ui->uiViewGroup;
@@ -1761,6 +1833,11 @@ namespace mrv
         viewGroup->fixed(dockGroup, dockGroup->w());
         const int X = viewGroup->x() + viewGroup->w() - dockGroup->w();
         dockGroup->position(X, dockGroup->y());
+
+        if (renderSize.isValid())
+        {
+            p.resizeWindow = false;
+        }
     }
 
     math::Vector2i TimelineViewport::_getFocus(int X, int Y) const noexcept
@@ -2146,9 +2223,9 @@ namespace mrv
     {
         TLRENDER_P();
 
-        p.displayOptions.resize(p.videoData.size());
-        if (p.displayOptions.empty())
+        if (p.videoData.empty())
         {
+            p.displayOptions.resize(1); // needed for image filters
             p.ui->uiGain->value(1.0f);
             p.ui->uiGainInput->value(1.0f);
             p.ui->uiGamma->value(1.0f);
@@ -2214,21 +2291,6 @@ namespace mrv
             p.ui->uiFStop->copy_label("f/8");
             p.ui->uiFStop->labelcolor(p.ui->uiGain->labelcolor());
         }
-
-        // Get the filters from the menu bar (even if hidden)
-        const Fl_Menu_Item* item =
-            p.ui->uiMenuBar->find_item(_("Render/Minify Filter/Linear"));
-        timeline::ImageFilter min_filter = timeline::ImageFilter::Nearest;
-        if (item && item->value())
-            min_filter = timeline::ImageFilter::Linear;
-
-        item = p.ui->uiMenuBar->find_item(_("Render/Magnify Filter/Linear"));
-        timeline::ImageFilter mag_filter = timeline::ImageFilter::Nearest;
-        if (item && item->value())
-            mag_filter = timeline::ImageFilter::Linear;
-
-        d.imageFilters.minify = min_filter;
-        d.imageFilters.magnify = mag_filter;
 
         _updateDisplayOptions(d);
     }
@@ -2340,15 +2402,14 @@ namespace mrv
                     Fl::screen_xywh(X, Y, W, H, screen_num);
                     w->resize(X, Y, W, H);
 #endif
-                    
+
                     // When fullscreen happens, the tool group bar also resizes
                     // on width, so we need to bring it back to its originazl
                     // size.
                     p.ui->uiRegion->layout();
-                    
+
                     p.ui->uiViewGroup->layout();
                     p.ui->uiViewGroup->redraw();
-                    
                 }
             }
         }
@@ -2437,6 +2498,7 @@ namespace mrv
             p.presentation = false;
             p.fullScreen = true;
         }
+
         w->fill_menu(p.ui->uiMenuBar);
     }
 
@@ -2491,6 +2553,10 @@ namespace mrv
         default:
             break;
         }
+
+        const auto outputDevice = App::app->outputDevice();
+        if (outputDevice)
+            outputDevice->setDisplayOptions({d});
 
         p.ui->uiColorChannel->copy_label(name.c_str());
         p.ui->uiColorChannel->redraw();
@@ -3199,11 +3265,11 @@ namespace mrv
 
         if (value == p.showVideo)
             return;
-        
+
         p.showVideo = value;
         redrawWindows();
     }
-        
+
     void TimelineViewport::showImage(const std::shared_ptr<image::Image>& image)
     {
         TLRENDER_P();
@@ -3285,6 +3351,12 @@ namespace mrv
         return speedValues[idx];
     }
 
+    tl::image::Tags
+    TimelineViewport::getTags() const noexcept
+    {
+        return _p->tagData;
+    }
+
     void TimelineViewport::_getTags() noexcept
     {
         TLRENDER_P();
@@ -3327,7 +3399,34 @@ namespace mrv
         }
         _setVideoRotation(videoRotation);
 
-        if (p.displayOptions[0].normalize.enabled)
+        i = p.tagData.find("hdr");
+        if (i != p.tagData.end())
+        {
+            if (p.ui->uiPrefs->uiPrefsTonemap->value() != 0)
+                p.hdrOptions.tonemap = true;
+
+            if (p.hdrOptions.tonemap && p.hdr != i->second)
+            {
+                p.hdr = i->second;
+
+                // Parse the JSON string back into a nlohmann::json object
+                nlohmann::json j = nlohmann::json::parse(p.hdr);
+                p.hdrOptions.hdrData = j.get<image::HDRData>();
+            }
+        }
+        else
+        {
+            p.hdrOptions.tonemap = false;
+        }
+
+        // \@bug: Apple (macOS Intel at least) is too slow and goes black.
+#ifndef __APPLE__
+        auto display = p.ui->uiTimeline->getDisplayOptions();
+        display.hdr = p.hdrOptions;
+        p.ui->uiTimeline->setDisplayOptions(display);
+#endif
+
+        if (!p.displayOptions.empty() && p.displayOptions[0].normalize.enabled)
         {
             i = p.tagData.find("Autonormalize Minimum");
             if (i != p.tagData.end())
@@ -3357,6 +3456,79 @@ namespace mrv
             _frameView();
     }
 
+    math::Matrix4x4f TimelineViewport::_renderProjectionMatrix() const noexcept
+    {
+        TLRENDER_P();
+
+        const math::Size2i& viewportSize = getViewportSize();
+        const math::Size2i& renderSize = getRenderSize();
+
+        math::Matrix4x4f renderMVP;
+
+        if (p.frameView && _getRotation() == 0.F)
+            return math::ortho(
+                0.F, static_cast<float>(renderSize.w), 0.F,
+                static_cast<float>(renderSize.h), -1.F, 1.F);
+
+        const auto renderAspect = renderSize.getAspect();
+        const auto viewportAspect = viewportSize.getAspect();
+
+        math::Vector2f transformOffset;
+        if (viewportAspect > 1.F)
+        {
+            transformOffset.x = renderSize.w / 2.F;
+            transformOffset.y = renderSize.w / renderAspect / 2.F;
+        }
+        else
+        {
+            transformOffset.x = renderSize.h * renderAspect / 2.F;
+            transformOffset.y = renderSize.h / 2.F;
+        }
+        const auto outputDevice = App::app->outputDevice();
+        if (!outputDevice)
+            return math::ortho(
+                0.F, static_cast<float>(renderSize.w), 0.F,
+                static_cast<float>(renderSize.h), -1.F, 1.F);
+
+        float scale = 1.0;
+        const math::Size2i& deviceSize = outputDevice->getSize();
+        if (viewportSize.isValid() && deviceSize.isValid())
+        {
+            scale *= deviceSize.w / static_cast<float>(viewportSize.w);
+        }
+        const math::Matrix4x4f& vm =
+            math::translate(
+                math::Vector3f(p.viewPos.x * scale, p.viewPos.y * scale, 0.F)) *
+            math::scale(
+                math::Vector3f(p.viewZoom * scale, p.viewZoom * scale, 1.F));
+        const auto& rotateMatrix = math::rotateZ(_getRotation());
+        const math::Matrix4x4f& centerMatrix = math::translate(
+            math::Vector3f(-renderSize.w / 2, -renderSize.h / 2, 0.F));
+        const math::Matrix4x4f& transformOffsetMatrix = math::translate(
+            math::Vector3f(transformOffset.x, transformOffset.y, 0.F));
+
+        const math::Matrix4x4f& pm = math::ortho(
+            0.F, static_cast<float>(viewportSize.w), 0.F,
+            static_cast<float>(viewportSize.h), -1.F, 1.F);
+
+        // Calculate aspect-correct scale
+        math::Matrix4x4f resizeScaleMatrix;
+
+        if (!p.frameView)
+        {
+            float scaleX = static_cast<float>(viewportSize.w) /
+                           static_cast<float>(renderSize.w);
+            float scaleY = static_cast<float>(viewportSize.h) /
+                           static_cast<float>(renderSize.h);
+            resizeScaleMatrix =
+                math::scale(math::Vector3f(scaleX, scaleY, 1.0f));
+        }
+        renderMVP = pm * resizeScaleMatrix * vm * transformOffsetMatrix *
+                    rotateMatrix * centerMatrix;
+
+        return renderMVP; // correct
+    }
+
     math::Matrix4x4f TimelineViewport::_projectionMatrix() const noexcept
     {
         TLRENDER_P();
@@ -3366,7 +3538,6 @@ namespace mrv
         const auto& viewportSize = getViewportSize();
         const auto viewportAspect = viewportSize.getAspect();
 
-        image::Size transformSize;
         math::Vector2f transformOffset;
         if (viewportAspect > 1.F)
         {
@@ -3382,17 +3553,16 @@ namespace mrv
         const math::Matrix4x4f& vm =
             math::translate(math::Vector3f(p.viewPos.x, p.viewPos.y, 0.F)) *
             math::scale(math::Vector3f(p.viewZoom, p.viewZoom, 1.F));
-        const auto& rm = math::rotateZ(_getRotation());
-        const math::Matrix4x4f& tm = math::translate(
+        const auto& rotateMatrix = math::rotateZ(_getRotation());
+        const math::Matrix4x4f& centerMatrix = math::translate(
             math::Vector3f(-renderSize.w / 2, -renderSize.h / 2, 0.F));
-        const math::Matrix4x4f& to = math::translate(
+        const math::Matrix4x4f& transformOffsetMatrix = math::translate(
             math::Vector3f(transformOffset.x, transformOffset.y, 0.F));
 
-        const auto pm = math::ortho(
+        const math::Matrix4x4f& pm = math::ortho(
             0.F, static_cast<float>(viewportSize.w), 0.F,
             static_cast<float>(viewportSize.h), -1.F, 1.F);
-
-        return pm * vm * to * rm * tm;
+        return pm * vm * transformOffsetMatrix * rotateMatrix * centerMatrix;
     }
 
     math::Matrix4x4f TimelineViewport::_pixelMatrix() const noexcept
@@ -3404,7 +3574,6 @@ namespace mrv
         const auto& viewportSize = getViewportSize();
         const auto viewportAspect = viewportSize.getAspect();
 
-        image::Size transformSize;
         math::Vector2f transformOffset;
         if (viewportAspect > 1.F)
         {

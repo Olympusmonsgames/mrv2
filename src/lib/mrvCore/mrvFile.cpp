@@ -26,6 +26,13 @@ namespace mrv
 {
     namespace file
     {
+        std::string normalizePath(const std::string& path)
+        {
+            std::string normalized = path;
+            std::replace(normalized.begin(), normalized.end(), '\\', '/');
+            return normalized;
+        }
+        
         bool isValidType(const std::string ext)
         {
             std::string extension = tl::string::toLower(ext);
@@ -137,6 +144,11 @@ namespace mrv
             return fs::is_directory(dir);
         }
 
+        bool exists(const fs::path& filePath)
+        {
+            return fs::exists(filePath);
+        }
+        
         bool isReadable(const fs::path& p)
         {
             const std::string& filePath = p.generic_string();

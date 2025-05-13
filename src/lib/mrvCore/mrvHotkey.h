@@ -38,7 +38,7 @@ namespace mrv
             alt(a),
             shift(s),
             key(k),
-            text(t){};
+            text(t) {};
 
         Hotkey(const Hotkey& h) :
             ctrl(h.ctrl),
@@ -46,7 +46,7 @@ namespace mrv
             alt(h.alt),
             shift(h.shift),
             key(h.key),
-            text(h.text){};
+            text(h.text) {};
 
         void clear()
         {
@@ -96,6 +96,7 @@ namespace mrv
     extern Hotkey kSaveImageToFolder;
     extern Hotkey kSaveOTIOEDL;
     extern Hotkey kSaveSequence;
+    extern Hotkey kSaveAudio;
     extern Hotkey kSaveAnnotationsOnly;
     extern Hotkey kSaveAnnotationsAsJson;
     extern Hotkey kSavePDF;
@@ -129,13 +130,17 @@ namespace mrv
     extern Hotkey kSafeAreas;
 
     extern Hotkey kIgnoreDisplayWindow;
+    extern Hotkey kIgnoreChromaticities;
     extern Hotkey kAutoNormalize;
     extern Hotkey kInvalidValues;
+    extern Hotkey kToggleHDRTonemap;
+
     extern Hotkey kDisplayWindow;
     extern Hotkey kDataWindow;
 
     extern Hotkey kToggleBackground;
 
+    extern Hotkey kCompareNone;
     extern Hotkey kCompareWipe;
     extern Hotkey kCompareOverlay;
     extern Hotkey kCompareDifference;
@@ -193,6 +198,7 @@ namespace mrv
     //! Looping hotkeys.
     extern Hotkey kSetInPoint;
     extern Hotkey kSetOutPoint;
+    extern Hotkey kToggleOtioClipInOut;
 
     extern Hotkey kPlaybackLoop;
     extern Hotkey kPlaybackOnce;
@@ -259,6 +265,7 @@ namespace mrv
 
     extern Hotkey kHudToggle;
 
+    extern Hotkey kOCIOToggle;
     extern Hotkey kOCIOPresetsToggle;
     extern Hotkey kOCIOInTopBarToggle;
 
@@ -297,6 +304,11 @@ namespace mrv
     extern Hotkey kToggleNetwork;
     extern Hotkey kToggleStereo3D;
     extern Hotkey kToggleUSD;
+
+    //! Window behavior
+    extern Hotkey kToggleClickThrough;
+    extern Hotkey kUITransparencyLess;
+    extern Hotkey kUITransparencyMore;
 
     //! Editing hotkeys.
     extern Hotkey kToggleEditMode;
@@ -340,7 +352,7 @@ namespace mrv
          */
         HotkeyEntry() :
             force(false),
-            hotkey(nullptr){};
+            hotkey(nullptr) {};
 
         /**
          * HotkeyEntry constructor.
@@ -353,11 +365,9 @@ namespace mrv
         HotkeyEntry(const std::string n, Hotkey* h, bool f = false) :
             force(f),
             name(n),
-            hotkey(h){};
+            hotkey(h) {};
 
-        ~HotkeyEntry()
-        { /*delete hotkey;*/
-        }
+        ~HotkeyEntry() { /*delete hotkey;*/ }
 
         bool force;
         std::string name;

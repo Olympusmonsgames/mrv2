@@ -2,17 +2,17 @@
 // mrv2
 // Copyright Contributors to the mrv2 Project. All rights reserved.
 
-#include <algorithm>
-#include <filesystem>
-namespace fs = std::filesystem;
-
-#include <tlIO/System.h>
+#include "mrvApp/mrvApp.h"
 
 #include "mrvCore/mrvFile.h"
 #include "mrvCore/mrvSequence.h"
 #include "mrvCore/mrvUtil.h"
 
-#include "mrvApp/mrvApp.h"
+#include <tlIO/System.h>
+
+#include <algorithm>
+#include <filesystem>
+namespace fs = std::filesystem;
 
 namespace mrv
 {
@@ -56,6 +56,7 @@ namespace mrv
         for (const auto& file : files)
         {
             file::Path path(file);
+            const std::string dir = path.getDirectory();
             const std::string root = path.getBaseName();
             const std::string frame = path.getNumber();
             const std::string view = ""; // @todo: path.getView();
@@ -67,7 +68,7 @@ namespace mrv
             else if (file::isSequence(file))
             {
                 Sequence s;
-                s.root = root;
+                s.root = dir + root;
                 s.view = view;
                 s.number = frame;
                 s.ext = ext;

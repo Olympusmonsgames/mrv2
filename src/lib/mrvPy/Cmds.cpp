@@ -41,7 +41,10 @@ namespace mrv2
 
         std::string getLanguage()
         {
-            return fl_getenv("LANGUAGE");
+            const char* language = fl_getenv("LANGUAGE");
+            if (!language)
+                return "en_US.UTF-8";
+            return language;
         }
 
         std::string getVersion()
@@ -50,7 +53,7 @@ namespace mrv2
         }
 
         /**
-         *  \brief Open a file with optiona audio.
+         *  \brief Open a file with optional audio.
          *
          * @param file        str holding the path to the file.
          * @param audioFile   optional str holding the path to the audio file.
@@ -181,7 +184,7 @@ namespace mrv2
         /**
          * \brief Set the display options.
          *
-         * @param value a valide image.DisplayOptions.
+         * @param value a valid image.DisplayOptions.
          */
         void setDisplayOptions(const timeline::DisplayOptions& value)
         {
@@ -390,6 +393,50 @@ namespace mrv2
         }
 
         /**
+         * \brief Save a single frame.
+         *
+         * @param file The path to the movie file or to the sequence, like:
+         *        bunny.0001.exr
+         * @param options (annotations and penexr options)
+         */
+        void saveMultipleFrames(
+            const std::string& file, std::vector<otime::RationalTime> times,
+            const SaveOptions opts = SaveOptions())
+        {
+            save_multiple_frames(file, times, App::ui, opts);
+        }
+        
+        /**
+         * \brief Save a single frame.
+         *
+         * @param file The path to the movie file or to the sequence, like:
+         *        bunny.0001.exr
+         * @param options (annotations and penexr options)
+         */
+        void saveMultipleAnnotationFrames(
+            const std::string& file, std::vector<otime::RationalTime> times,
+            SaveOptions opts = SaveOptions())
+        {
+            opts.annotations = true;
+            opts.video = false;
+            
+            save_multiple_annotation_frames(file, times, App::ui, opts);
+        }
+
+        /**
+         * \brief Save a single frame.
+         *
+         * @param file The path to the movie file or to the sequence, like:
+         *        bunny.0001.exr
+         * @param options (annotations and penexr options)
+         */
+        void saveSingleFrame(
+            const std::string& file, const SaveOptions opts = SaveOptions())
+        {
+            save_single_frame(file, App::ui, opts);
+        }
+
+        /**
          * \brief Save an .otio file with relative paths if possible.
          *
          * @param file The .otio file, like D:/movies/EDL.otio
@@ -455,7 +502,7 @@ Used to run main commands and get arguments and set the display, image, compare,
 
     cmds.def(
         "rootPath", &mrv2::cmd::rootPath,
-        _("Return the root path to the insallation of mrv2."));
+        _("Return the root path to the installation of mrv2."));
 
     cmds.def(
         "prefsPath", &mrv2::cmd::prefsPath,
@@ -568,6 +615,24 @@ Used to run main commands and get arguments and set the display, image, compare,
         "save", &mrv2::cmd::save,
         _("Save a movie or sequence from the front layer."),
         py::arg("fileName"), py::arg("options") = mrv::SaveOptions());
+
+    cmds.def(
+        "saveSingleFrame", &mrv2::cmd::saveSingleFrame,
+        _("Save a single frame."), py::arg("fileName"),
+        py::arg("options") = mrv::SaveOptions());
+    
+    cmds.def(
+        "saveMultipleAnnotationFrames",
+        &mrv2::cmd::saveMultipleAnnotationFrames,
+        _("Save multiple annotation frames."), py::arg("fileName"),
+        py::arg("times") = std::vector<mrv::otime::RationalTime>(),
+        py::arg("options") = mrv::SaveOptions());
+
+    cmds.def(
+        "saveMultipleFrames", &mrv2::cmd::saveMultipleFrames,
+        _("Save multiple frames."), py::arg("fileName"),
+        py::arg("times") = std::vector<mrv::otime::RationalTime>(),
+        py::arg("options") = mrv::SaveOptions());
 
     cmds.def(
         "saveOTIO", &mrv2::cmd::saveOTIO,

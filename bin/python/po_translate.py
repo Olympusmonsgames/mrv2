@@ -1,5 +1,8 @@
 #!/usr/env/bin python
 
+#
+# Built-in imports
+#
 import argparse
 from collections import Counter
 import gc
@@ -8,6 +11,9 @@ import os
 import polib
 import re
 import sys
+from urllib.error import HTTPError
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 #
 # Script version
@@ -24,6 +30,7 @@ LANGUAGES = [
     'fr',
     'hi_IN',
     'it',
+    'ja',
     'pt',
     'ru',
     'zh-CN',
@@ -66,11 +73,44 @@ if not lang in ['all'] + LANGUAGES:
 #
 DONT_TRANSLATE = [
     '@B12@C7@b@.Remote\\t@B12@C7@b@.Local'
+    '70 mm',
+    '35 mm Panavision',
+    'HDR maxCLL',
+    'HDR maxFALL',
+    'FourCC: {0}',
     '%d Hz.',
     '1:2',
     '1:4',
     '1:8',
     '1:16',
+    'ST2094_40',
+    'ST2094_10',
+    'Clip',
+    'BT2390',
+    'BT2446A',
+    'Spline',
+    'Reinhard',
+    'Mobius',
+    'Linear Light',
+    'x1',
+    'x2',
+    'x3',
+    'x4',
+    'x5',
+    'x6',
+    'x7',
+    'x8',
+    'x9',
+    '24',
+    '1/2',
+    '1/3',
+    '1/4',
+    '1/5',
+    '1/6',
+    '1/7',
+    '1/8',
+    '1/9',
+    '24',
     'Alt',
     'API',
     'arib-std-b67',
@@ -124,6 +164,8 @@ DONT_TRANSLATE = [
     'Stereo 3D',
     'Studio',
     'USD',
+    'ZIP',
+    'ZIPS',
 ]
 
 #
@@ -147,8 +189,10 @@ GOOGLE_LANGUAGES = {
     'fr' : 'French',
     'hi' : 'Hindi',
     'it' : 'Italian',
+    'ja' : 'Japanese',
     'pt' : 'Portuguese',
-    'zh' : 'Chinese (Simplified)',
+    'ru' : 'Russian',
+    'zh' : 'ZH-CN',
 }
 
 #
@@ -181,12 +225,8 @@ if not use_google and not use_tokenizer:
 class POTranslator:
 
 
-    def __init__(self, po_file, lang, use_google = True, use_tokenizer = True): 
+    def __init__(self, lang, use_google = False, use_tokenizer = True): 
         self.model = self.tokenizer = None
-        
-        if not os.path.exists(po_file):
-            print(po_file,'does not exist!')
-            exit(1)
         
         self.use_google = use_google
         self.use_tokenizer = use_tokenizer
@@ -196,19 +236,18 @@ class POTranslator:
         if self.code == 'pt' or self.code == 'fr' or \
            self.code == 'es' or self.code == 'it':
             self.helsinki = 'ROMANCE'
+        elif self.code == 'ja':
+            self.helsinki = 'jap'
         
         self.have_seen = {}
 
-
         if self.code == 'en':
-            # Initialitize po translation
-            self.translate_po(po_file, self.code)
             return
     
-        model_name = f"Helsinki-NLP/opus-mt-en-{self.helsinki}"
-        print('Load model',model_name,'for',self.code)
         
         if use_tokenizer:
+            model_name = f"Helsinki-NLP/opus-mt-en-{self.helsinki}"
+            print('Load model',model_name,'for',self.code)
             self.tokenizer = MarianTokenizer.from_pretrained(model_name,
                                                              clean_up_tokenization_spaces=True)
             try:
@@ -220,9 +259,7 @@ class POTranslator:
         # Initialize Google translator
         if use_google:
             self.translator = Translator(to_lang=GOOGLE_LANGUAGES[self.code])
-
-        # Initialitize po translation
-        self.translate_po(po_file, self.code)
+        
         
     def verify_text(self, text):
         # Use regex to match any repeated pair of two characters
@@ -270,26 +307,31 @@ class POTranslator:
             return english
     
         if not self.use_google:
-            return english
+            return ''
 
         print('GOOGLE TRANSLATE:')
         print(f"\tOriginal: {english}")
-        translated_text = self.translator.translate(english)
-        print(f'\tTranslated: {translated_text}')
-        if "WARNING" in translated_text or 'http' in translated_text:
+        try:
+            translated_text = self.translator.translate(english)
+            print(f'\tTranslated: {translated_text}')
+            self.have_seen[english] = translated_text
+        except Exception as e:
+            print(e)
+            translated_text = ''
+        if "WARNING" in translated_text:
             print()
             print("Stopping... too many requests for today")
-            print()
+            print(translated_text)
             self.use_google = False
-            return english
+            
+            if 'http' in translated_text:
+                translated_text = re.sub('<a href.*</a>', '', translated_text)
 
         if english == translated_text:
             print()
             print('GOOGLE TRANSLATE FAILED.')
             print()
-            return '****FAILED****'
-        
-        self.have_seen[english] = translated_text
+            return ''
         return translated_text
 
     
@@ -298,6 +340,7 @@ class POTranslator:
             return english
         
         if len(english) < 4 and not self.is_number(english):
+            print(english)
             return english
     
         translated_text = self.have_seen.get(english, None)
@@ -338,10 +381,20 @@ class POTranslator:
     #
     # Main translate text function.  Checks if it is a menu and translates
     # each menu entry separately.
+    # If we have '/' try to translate with google first 
     #
     def translate_text(self, english):
-        print('AI TRANSLATE')        
+        if '/' in english:
+            return ''
+        if ':class:' in english:
+            return ''
+        if '(*.' in english:
+            return ''
+        if self.code == 'ja' and self.use_google:
+            return self.translate_with_google(english)        
         if '\n' in english:
+            if self.use_google:
+                return self.translate_with_google(english)
             lines = english.split('\n')
             lines = [self._translate_text(line) for line in lines]
             translated_text = '\n'.join(lines)
@@ -350,6 +403,8 @@ class POTranslator:
             return translated_text
         
         if '/' in english and len(english) < 40:
+            if self.use_google:
+                return self.translate_with_google(english)
             replaced = english.replace('&','')
             menus = replaced.split('/')
             menus = [self._translate_text(menu_item) for menu_item in menus]
@@ -357,9 +412,12 @@ class POTranslator:
             print('\t\tMENU English=',replaced)
             print('\t\tMENU Translated=', translated_text)
             return translated_text
-    
+
+        if not self.tokenizer and not self.use_google:
+            return ''
+        
         # Tokenize the input text
-        print(f"\tOriginal: {english}")
+        print(f"\tTRANSFORMERS Original: {english}")
 
         if TRANSLATE_FIXES.get(english, False):
             english = TRANSLATE_FIXES[english]
@@ -369,13 +427,20 @@ class POTranslator:
             return '********FAILED********'
         translated_text = translated_text.replace('Mrv2', 'mrv2')
         print(f"\tTranslated: {translated_text}")
+        if translated_text == english:
+            return ''
         return translated_text
 
     # Load the .po file
-    def translate_po(self, po_input, language):
+    def translate_po(self, po_input):
+        if not os.path.exists(po_input):
+            print(po_input,'does not exist!')
+            exit(1)
+            
         po = polib.pofile(po_input)
         
         # Translate each entry
+        language = self.code
         try:
             for entry in po:
                 if language == 'en':
@@ -384,18 +449,20 @@ class POTranslator:
                         entry.flags.remove('fuzzy')
                     continue
                 elif entry.msgid in DONT_TRANSLATE:
+                    print('DONT TRANSLATE')
                     entry.msgstr = entry.msgid
-                elif 'GOOGLE' == entry.msgstr:
-                    translated = self.translate_with_google(entry.msgid)
-                    entry.msgstr = translated
                 elif entry.msgid and not entry.msgstr:
                     translated = self.translate_text(entry.msgid)
                     entry.msgstr = translated
-                if 'fuzzy' in entry.flags:
+                elif entry.msgid == entry.msgstr:
                     translated = self.translate_text(entry.msgid)
                     entry.msgstr = translated
+                if 'fuzzy' in entry.flags:
                     entry.flags.remove('fuzzy')
 
+                if entry.msgstr == '':
+                    continue
+                    
                 # Check to see if it begins and ends with newlines
                 if entry.msgid[0] == '\n' and entry.msgstr[0] != '\n':
                     entry.msgstr = '\n' + entry.msgstr
@@ -420,8 +487,8 @@ class POTranslator:
 def po_translate(lang):
 
     main_po = f'src/po/{lang}.po'
-    POTranslator(main_po, lang, use_google, use_tokenizer)
-
+    translator = POTranslator(lang, use_google, use_tokenizer)
+    translator.translate_po(main_po)
 
     cwd = os.getcwd()
     os.chdir('src/python/plug-ins')
@@ -431,16 +498,20 @@ def po_translate(lang):
         plugin = plugin[:-3] + '.po'
         plugin_po = f'src/po/python/plug-ins/locale/{lang}/LC_MESSAGES/{plugin}'
         print('Translating plugin',plugin)
-        POTranslator(plugin_po, lang, use_google, use_tokenizer)
+        translator.translate_po(plugin_po)
 
 
 model_name = ''
-    
-if lang == 'all':
-    for lang in LANGUAGES:
-        po_translate(lang)
-else:
-    po_translate(lang)    
+
+if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
+
+    if lang == 'all':
+        for lang in LANGUAGES:
+            po_translate(lang)
+    else:
+        po_translate(lang)    
 
 
 
